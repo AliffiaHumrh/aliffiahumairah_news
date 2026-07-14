@@ -1,0 +1,40 @@
+name: Daily Crawl (Blocked Sources Experiment)
+
+# Eksperimen: sumber-sumber di config.CI_BLOCKED_SOURCE_NAMES (CNN
+# Indonesia, CNBC Indonesia, Tempo) terbukti selalu gagal saat di-crawl
+# dari IP GitHub Actions tiap 30 menit (workflow crawl.yml). Workflow ini
+# coba frekuensi jauh lebih jarang (1x sehari) untuk sumber yang sama --
+# TIDAK ADA JAMINAN ini berhasil kalau blokirnya berbasis reputasi IP,
+# bukan rate-limiting. Cek log run-nya secara berkala; kalau setelah
+# beberapa hari masih GAGAL terus, aman untuk menghapus file ini.
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 22:00 UTC = 05:00 WIB -- pagi hari, lalu lintas situs relatif sepi
+  workflow_dispatch: {}
+
+concurrency:
+  group: news-crawl-blocked
+  cancel-in-progress: false
+
+jobs:
+  crawl-blocked:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install feedparser APScheduler python-dotenv supabase
+
+      - name: Jalankan crawl untuk sumber yang biasanya diblokir
+        env:
+          DB_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python crawl_blocked_sources.py
