@@ -1,14 +1,3 @@
-"""
-Crawler inti (FR-01: crawling otomatis, FR-02: penyimpanan data,
-FR-03: deduplikasi -- baseline exact-match URL).
-
-Desain mengikuti NFR di PRD:
-- Reliable: kegagalan satu sumber tidak menghentikan pipeline (setiap
-  sumber dibungkus try/except sendiri).
-- Observable: setiap tahap di-log (sumber mana yang jalan, berapa berita
-  baru, berapa duplikat, error apa).
-"""
-
 import html
 import logging
 import re
@@ -111,18 +100,22 @@ def crawl_source(source: dict) -> dict:
     return result
 
 
-def crawl_all_sources() -> list[dict]:
+def crawl_all_sources(sources: list[dict] | None = None) -> list[dict]:
     """
-    Jalankan crawling untuk semua sumber di config.SOURCES secara
-    berurutan, dengan jeda antar-sumber (rate limiting sesuai catatan PRD
-    soal tidak membebani server sumber).
+    Jalankan crawling untuk daftar sumber yang diberikan (default:
+    config.SOURCES, yaitu semua sumber) secara berurutan, dengan jeda
+    antar-sumber (rate limiting sesuai catatan PRD soal tidak membebani
+    server sumber).
     """
-    logger.info("=== Mulai crawling (%d sumber) ===", len(config.SOURCES))
+    if sources is None:
+        sources = config.SOURCES
+
+    logger.info("=== Mulai crawling (%d sumber) ===", len(sources))
     results = []
 
-    for i, source in enumerate(config.SOURCES):
+    for i, source in enumerate(sources):
         results.append(crawl_source(source))
-        if i < len(config.SOURCES) - 1:
+        if i < len(sources) - 1:
             time.sleep(config.DELAY_BETWEEN_SOURCES_SECONDS)
 
     total_new = sum(r["new"] for r in results)
