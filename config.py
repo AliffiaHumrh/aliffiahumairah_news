@@ -47,6 +47,16 @@ SOURCES = [
     {"name": "Viva", "url": "https://www.viva.co.id/get/all"},
 ]
 
+CI_BLOCKED_SOURCE_NAMES = {
+    "CNN Indonesia - Nasional",
+    "CNN Indonesia - Ekonomi",
+    "CNN Indonesia - Teknologi",
+    "CNBC Indonesia - News",
+    "CNBC Indonesia - Market",
+    "Tempo - Nasional",
+    "Tempo - Bisnis",
+}
+
 # --------------------------------------------------------------------------
 # Scheduler
 # --------------------------------------------------------------------------
