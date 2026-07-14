@@ -1,0 +1,39 @@
+name: Scheduled News Crawl
+
+# Jadwal: tiap 30 menit. GitHub Actions selalu pakai UTC, dan waktunya
+# BISA meleset 5-30 menit saat GitHub sedang sibuk -- tidak masalah
+# untuk crawler berita, karena telat beberapa menit tidak bikin berita
+# ketinggalan (RSS feed sumbernya juga tidak real-time detik-per-detik).
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}   # tombol "Run workflow" manual di tab Actions, untuk testing
+
+# Cegah dua run numpuk kalau run sebelumnya belum selesai pas jadwal
+# berikutnya sudah datang (jarang terjadi, tapi aman untuk dijaga).
+concurrency:
+  group: news-crawl
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install feedparser APScheduler python-dotenv supabase
+
+      - name: Jalankan crawl sekali
+        env:
+          DB_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python crawl_once.py
