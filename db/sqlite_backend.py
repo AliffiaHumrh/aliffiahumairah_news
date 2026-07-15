@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS news (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     content TEXT,
+    processed_content TEXT,
     source TEXT NOT NULL,
     url TEXT NOT NULL UNIQUE,
     published_at TEXT,
@@ -44,6 +45,11 @@ def get_connection():
 def init_db():
     with get_connection() as conn:
         conn.executescript(SCHEMA)
+        # Migrasi ringan untuk database SQLite lama yang dibuat sebelum
+        # kolom processed_content ada -- aman dipanggil berkali-kali.
+        existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(news)")}
+        if "processed_content" not in existing_cols:
+            conn.execute("ALTER TABLE news ADD COLUMN processed_content TEXT")
     logger.info("Database SQLite siap di %s", config.DB_PATH)
 
 
@@ -84,7 +90,7 @@ def count_by_source() -> list[dict]:
 
 def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None) -> list[dict]:
     """Dipakai oleh dashboard Streamlit untuk menampilkan berita terbaru."""
-    query = "SELECT id, title, content, source, url, published_at, created_at FROM news"
+    query = "SELECT id, title, content, processed_content, source, url, published_at, created_at FROM news"
     conditions, params = [], []
 
     if source:
@@ -108,3 +114,24 @@ def list_sources() -> list[str]:
     with get_connection() as conn:
         rows = conn.execute("SELECT DISTINCT source FROM news ORDER BY source").fetchall()
     return [r["source"] for r in rows]
+
+
+def get_unprocessed_news(limit: int = 200) -> list[dict]:
+    """
+    Ambil berita yang belum punya processed_content (FR-04). Dipakai oleh
+    preprocess_all.py untuk batch processing.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, title, content FROM news WHERE processed_content IS NULL LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_processed_content(news_id: int, processed_content: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE news SET processed_content = ? WHERE id = ?",
+            (processed_content, news_id),
+        )

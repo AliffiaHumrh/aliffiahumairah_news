@@ -5,6 +5,7 @@ create table if not exists news (
     id           bigint generated always as identity primary key,
     title        text not null,
     content      text,
+    processed_content text,
     source       text not null,
     url          text not null unique,
     published_at text,
@@ -13,6 +14,11 @@ create table if not exists news (
 
 create index if not exists idx_news_source        on news (source);
 create index if not exists idx_news_published_at   on news (published_at desc);
+
+-- MIGRASI untuk tabel yang sudah ada duluan (dibuat sebelum kolom
+-- processed_content ditambahkan) -- jalankan baris ini di SQL Editor
+-- Supabase kalau tabel `news` kamu sudah ada isinya:
+--   alter table news add column if not exists processed_content text;
 
 -- Aktifkan Row Level Security. Untuk tahap ini kita pakai satu policy
 -- permissive (baca+tulis via anon/service key) karena crawler & dashboard

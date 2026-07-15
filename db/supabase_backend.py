@@ -108,7 +108,7 @@ def count_by_source() -> list[dict]:
 def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None) -> list[dict]:
     client = _get_client()
     query = client.table("news").select(
-        "id, title, content, source, url, published_at, created_at"
+        "id, title, content, processed_content, source, url, published_at, created_at"
     )
     if source:
         query = query.eq("source", source)
@@ -123,3 +123,24 @@ def list_sources() -> list[str]:
     client = _get_client()
     resp = client.table("news").select("source").execute()
     return sorted({row["source"] for row in resp.data})
+
+
+def get_unprocessed_news(limit: int = 200) -> list[dict]:
+    """
+    Ambil berita yang belum punya processed_content (FR-04). Dipakai oleh
+    preprocess_all.py untuk batch processing.
+    """
+    client = _get_client()
+    resp = (
+        client.table("news")
+        .select("id, title, content")
+        .is_("processed_content", "null")
+        .limit(limit)
+        .execute()
+    )
+    return resp.data
+
+
+def update_processed_content(news_id: int, processed_content: str) -> None:
+    client = _get_client()
+    client.table("news").update({"processed_content": processed_content}).eq("id", news_id).execute()
