@@ -10,14 +10,13 @@ Beda dengan main.py:
 - crawl_once.py TIDAK menyalakan scheduler apa pun -- dia cuma crawl
   SEKALI lalu keluar (exit). Penjadwalan "ulang tiap 30 menit" diambil
   alih sepenuhnya oleh GitHub Actions (lihat .github/workflows/crawl.yml)
-  yang men-trigger script ini secara berkala. Ini didesain untuk
-  dijalankan di container baru setiap kali dipanggil, bukan proses lama
-  yang idle menunggu.
+  yang men-trigger script ini secara berkala.
 
 Jalankan manual (untuk testing lokal): python crawl_once.py
 """
 
 import logging
+import os
 import sys
 
 import config
@@ -33,12 +32,32 @@ def setup_logging():
     )
 
 
+def _select_sources() -> list[dict]:
+    """
+    Kalau dijalankan di GitHub Actions, otomatis skip sumber-sumber yang
+    diketahui memblokir IP data center (lihat config.CI_BLOCKED_SOURCE_NAMES).
+    Kalau dijalankan lokal (laptop), tetap crawl semua sumber seperti biasa.
+    """
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        skipped = [s for s in config.SOURCES if s["name"] in config.CI_BLOCKED_SOURCE_NAMES]
+        selected = [s for s in config.SOURCES if s["name"] not in config.CI_BLOCKED_SOURCE_NAMES]
+        if skipped:
+            logging.getLogger("news_crawler.crawl_once").info(
+                "Berjalan di GitHub Actions -- skip %d sumber yang diketahui "
+                "memblokir IP data center: %s",
+                len(skipped), ", ".join(s["name"] for s in skipped),
+            )
+        return selected
+    return config.SOURCES
+
+
 def main():
     setup_logging()
     logger = logging.getLogger("news_crawler.crawl_once")
 
     db.init_db()
-    crawl_all_sources()
+    sources = _select_sources()
+    crawl_all_sources(sources)
     logger.info("Total berita di database sekarang: %d", db.count_news())
 
 
