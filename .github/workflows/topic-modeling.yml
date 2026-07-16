@@ -1,0 +1,43 @@
+name: Daily Topic Modeling
+
+# Topic modeling (FR-05) HARUS jalan ke SEMUA data sekaligus, bukan
+# inkremental seperti crawling -- jadi dijadwalkan 1x sehari, bukan tiap
+# 30 menit. Cache model embedding supaya run kedua dst tidak perlu
+# download ulang ~470MB tiap kali (mempercepat run berikutnya).
+on:
+  schedule:
+    - cron: '0 20 * * *'   # 20:00 UTC = 03:00 WIB -- dini hari, setelah crawling seharian numpuk
+  workflow_dispatch: {}
+
+concurrency:
+  group: news-topic-modeling
+  cancel-in-progress: false
+
+jobs:
+  topic-modeling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache model embedding (Hugging Face)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-model-${{ runner.os }}-paraphrase-multilingual-MiniLM-L12-v2
+
+      - name: Install dependencies
+        run: pip install python-dotenv supabase bertopic sentence-transformers
+
+      - name: Jalankan topic modeling
+        env:
+          DB_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python topic_modeling.py
