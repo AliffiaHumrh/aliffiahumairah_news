@@ -108,7 +108,7 @@ def count_by_source() -> list[dict]:
 def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None) -> list[dict]:
     client = _get_client()
     query = client.table("news").select(
-        "id, title, content, processed_content, source, url, published_at, created_at"
+        "id, title, content, processed_content, topic_id, topic_label, source, url, published_at, created_at"
     )
     if source:
         query = query.eq("source", source)
@@ -144,3 +144,36 @@ def get_unprocessed_news(limit: int = 200) -> list[dict]:
 def update_processed_content(news_id: int, processed_content: str) -> None:
     client = _get_client()
     client.table("news").update({"processed_content": processed_content}).eq("id", news_id).execute()
+
+
+def get_all_processed_news(limit: int = 10000) -> list[dict]:
+    """
+    Ambil semua berita yang sudah punya processed_content (FR-05: input
+    untuk topic modeling). Pakai pagination karena Supabase membatasi
+    1000 baris per request (lihat pelajaran dari cleanup_html.py).
+    """
+    client = _get_client()
+    rows: list[dict] = []
+    page_size = 1000
+    offset = 0
+    while len(rows) < limit:
+        resp = (
+            client.table("news")
+            .select("id, title, processed_content")
+            .not_.is_("processed_content", "null")
+            .neq("processed_content", "")
+            .order("id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return rows[:limit]
+
+
+def update_topic(news_id: int, topic_id: int, topic_label: str) -> None:
+    client = _get_client()
+    client.table("news").update({"topic_id": topic_id, "topic_label": topic_label}).eq("id", news_id).execute()

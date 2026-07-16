@@ -34,3 +34,5 @@ fetch_news = _backend.fetch_news
 list_sources = _backend.list_sources
 get_unprocessed_news = _backend.get_unprocessed_news
 update_processed_content = _backend.update_processed_content
+get_all_processed_news = _backend.get_all_processed_news
+update_topic = _backend.update_topic

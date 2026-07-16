@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS news (
     title TEXT NOT NULL,
     content TEXT,
     processed_content TEXT,
+    topic_id INTEGER,
+    topic_label TEXT,
     source TEXT NOT NULL,
     url TEXT NOT NULL UNIQUE,
     published_at TEXT,
@@ -28,6 +30,7 @@ CREATE TABLE IF NOT EXISTS news (
 );
 CREATE INDEX IF NOT EXISTS idx_news_source ON news(source);
 CREATE INDEX IF NOT EXISTS idx_news_published_at ON news(published_at);
+CREATE INDEX IF NOT EXISTS idx_news_topic_id ON news(topic_id);
 """
 
 
@@ -45,11 +48,14 @@ def get_connection():
 def init_db():
     with get_connection() as conn:
         conn.executescript(SCHEMA)
-        # Migrasi ringan untuk database SQLite lama yang dibuat sebelum
-        # kolom processed_content ada -- aman dipanggil berkali-kali.
+        # Migrasi ringan untuk database SQLite lama -- aman dipanggil berkali-kali.
         existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(news)")}
         if "processed_content" not in existing_cols:
             conn.execute("ALTER TABLE news ADD COLUMN processed_content TEXT")
+        if "topic_id" not in existing_cols:
+            conn.execute("ALTER TABLE news ADD COLUMN topic_id INTEGER")
+        if "topic_label" not in existing_cols:
+            conn.execute("ALTER TABLE news ADD COLUMN topic_label TEXT")
     logger.info("Database SQLite siap di %s", config.DB_PATH)
 
 
@@ -90,7 +96,7 @@ def count_by_source() -> list[dict]:
 
 def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None) -> list[dict]:
     """Dipakai oleh dashboard Streamlit untuk menampilkan berita terbaru."""
-    query = "SELECT id, title, content, processed_content, source, url, published_at, created_at FROM news"
+    query = "SELECT id, title, content, processed_content, topic_id, topic_label, source, url, published_at, created_at FROM news"
     conditions, params = [], []
 
     if source:
@@ -134,4 +140,31 @@ def update_processed_content(news_id: int, processed_content: str) -> None:
         conn.execute(
             "UPDATE news SET processed_content = ? WHERE id = ?",
             (processed_content, news_id),
+        )
+
+
+def get_all_processed_news(limit: int = 10000) -> list[dict]:
+    """
+    Ambil semua berita yang sudah punya processed_content (FR-05: input
+    untuk topic modeling). Beda dengan get_unprocessed_news() -- ini
+    ambil yang SUDAH diproses, bukan yang belum.
+    """
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, title, processed_content FROM news
+            WHERE processed_content IS NOT NULL AND processed_content != ''
+            ORDER BY id
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_topic(news_id: int, topic_id: int, topic_label: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE news SET topic_id = ?, topic_label = ? WHERE id = ?",
+            (topic_id, topic_label, news_id),
         )
