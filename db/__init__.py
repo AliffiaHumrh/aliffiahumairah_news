@@ -44,3 +44,6 @@ get_news_by_ids = _backend.get_news_by_ids
 get_topic_news_counts = _backend.get_topic_news_counts
 insert_topic_trend = _backend.insert_topic_trend
 get_latest_trends = _backend.get_latest_trends
+get_articles_for_topic = _backend.get_articles_for_topic
+insert_topic_summary = _backend.insert_topic_summary
+get_latest_summaries = _backend.get_latest_summaries

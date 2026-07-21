@@ -7,3 +7,5 @@ pandas>=2.2.0
 Sastrawi>=1.0.1
 bertopic>=0.16.0
 sentence-transformers>=3.0.0
+transformers>=4.40.0
+torch>=2.0.0

@@ -46,6 +46,17 @@ CREATE TABLE IF NOT EXISTS topic_trends (
 );
 CREATE INDEX IF NOT EXISTS idx_topic_trends_calculated_at ON topic_trends(calculated_at);
 CREATE INDEX IF NOT EXISTS idx_topic_trends_topic_id ON topic_trends(topic_id);
+
+CREATE TABLE IF NOT EXISTS topic_summaries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic_id INTEGER NOT NULL,
+    topic_label TEXT,
+    summary_text TEXT,
+    article_count INTEGER NOT NULL DEFAULT 0,
+    generated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_topic_summaries_generated_at ON topic_summaries(generated_at);
+CREATE INDEX IF NOT EXISTS idx_topic_summaries_topic_id ON topic_summaries(topic_id);
 """
 
 
@@ -311,6 +322,51 @@ def get_latest_trends(limit: int = 20) -> list[dict]:
             SELECT * FROM topic_trends
             WHERE calculated_at = ?
             ORDER BY trend_score DESC
+            LIMIT ?
+            """,
+            (latest_time, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_articles_for_topic(topic_id: int, limit: int = 10) -> list[dict]:
+    """Ambil beberapa artikel terbaru untuk satu topic_id (dipakai ai_summary.py)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, title, content FROM news
+            WHERE topic_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (topic_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_topic_summary(topic_id: int, topic_label: str, summary_text: str, article_count: int, generated_at: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO topic_summaries (topic_id, topic_label, summary_text, article_count, generated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (topic_id, topic_label, summary_text, article_count, generated_at),
+        )
+
+
+def get_latest_summaries(limit: int = 20) -> list[dict]:
+    """Ambil snapshot ringkasan topik terbaru."""
+    with get_connection() as conn:
+        latest_time_row = conn.execute("SELECT MAX(generated_at) as t FROM topic_summaries").fetchone()
+        if not latest_time_row or not latest_time_row["t"]:
+            return []
+        latest_time = latest_time_row["t"]
+        rows = conn.execute(
+            """
+            SELECT * FROM topic_summaries
+            WHERE generated_at = ?
+            ORDER BY article_count DESC
             LIMIT ?
             """,
             (latest_time, limit),

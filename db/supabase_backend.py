@@ -341,3 +341,48 @@ def get_latest_trends(limit: int = 20) -> list[dict]:
         .execute()
     )
     return resp.data
+
+
+def get_articles_for_topic(topic_id: int, limit: int = 10) -> list[dict]:
+    """Ambil beberapa artikel terbaru untuk satu topic_id (dipakai ai_summary.py)."""
+    client = _get_client()
+    resp = (
+        client.table("news")
+        .select("id, title, content")
+        .eq("topic_id", topic_id)
+        .order("created_at", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return resp.data
+
+
+def insert_topic_summary(topic_id: int, topic_label: str, summary_text: str, article_count: int, generated_at: str) -> None:
+    client = _get_client()
+    client.table("topic_summaries").insert(
+        {
+            "topic_id": topic_id,
+            "topic_label": topic_label,
+            "summary_text": summary_text,
+            "article_count": article_count,
+            "generated_at": generated_at,
+        }
+    ).execute()
+
+
+def get_latest_summaries(limit: int = 20) -> list[dict]:
+    """Ambil snapshot ringkasan topik terbaru."""
+    client = _get_client()
+    latest_resp = client.table("topic_summaries").select("generated_at").order("generated_at", desc=True).limit(1).execute()
+    if not latest_resp.data:
+        return []
+    latest_time = latest_resp.data[0]["generated_at"]
+    resp = (
+        client.table("topic_summaries")
+        .select("*")
+        .eq("generated_at", latest_time)
+        .order("article_count", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return resp.data

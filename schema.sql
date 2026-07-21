@@ -58,6 +58,28 @@ returns void as $$
   where n.id = (u->>'id')::bigint;
 $$ language sql;
 
+-- FR-08: ringkasan naratif per topik, snapshot harian (mirip pola
+-- topic_trends -- ditulis ulang tiap kali ai_summary.py dijalankan).
+create table if not exists topic_summaries (
+    id             bigint generated always as identity primary key,
+    topic_id       integer not null,
+    topic_label    text,
+    summary_text   text,
+    article_count  integer not null default 0,
+    generated_at   timestamptz not null default now()
+);
+
+create index if not exists idx_topic_summaries_generated_at on topic_summaries (generated_at desc);
+create index if not exists idx_topic_summaries_topic_id on topic_summaries (topic_id);
+
+alter table topic_summaries enable row level security;
+drop policy if exists "topic_summaries_allow_all_internal" on topic_summaries;
+create policy "topic_summaries_allow_all_internal"
+    on topic_summaries
+    for all
+    using (true)
+    with check (true);
+
 -- MIGRASI untuk tabel yang sudah ada duluan (dibuat sebelum kolom
 -- processed_content ditambahkan) -- jalankan baris ini di SQL Editor
 -- Supabase kalau tabel `news` kamu sudah ada isinya:
