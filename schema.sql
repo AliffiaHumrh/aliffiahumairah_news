@@ -15,6 +15,49 @@ create table if not exists news (
 create index if not exists idx_news_source        on news (source);
 create index if not exists idx_news_published_at   on news (published_at desc);
 
+-- FR-07: snapshot trend score per topik dari waktu ke waktu. Terpisah
+-- dari tabel `news` karena ini properti "topik pada satu titik waktu",
+-- bukan properti tiap baris berita -- ditulis ulang tiap kali
+-- trend_scoring.py dijalankan (biasanya nempel jadwal harian setelah
+-- topic modeling).
+create table if not exists topic_trends (
+    id                    bigint generated always as identity primary key,
+    topic_id              integer not null,
+    topic_label           text,
+    news_count_recent     integer not null default 0,
+    news_count_previous   integer not null default 0,
+    growth_rate           numeric,
+    trend_score           numeric,
+    calculated_at         timestamptz not null default now()
+);
+
+create index if not exists idx_topic_trends_calculated_at on topic_trends (calculated_at desc);
+create index if not exists idx_topic_trends_topic_id on topic_trends (topic_id);
+
+alter table topic_trends enable row level security;
+drop policy if exists "topic_trends_allow_all_internal" on topic_trends;
+create policy "topic_trends_allow_all_internal"
+    on topic_trends
+    for all
+    using (true)
+    with check (true);
+
+-- Fungsi buat batch update topic_id/topic_label (dipakai topic_modeling.py).
+-- Alasan pakai RPC (bukan .upsert() biasa dari client): upsert butuh
+-- semua kolom NOT NULL (title, content, source, url) ada di payload,
+-- padahal kita cuma mau UPDATE 2 kolom. Fungsi ini murni UPDATE, aman
+-- dipanggil dengan payload sebagian kolom saja. Juga jauh lebih cepat &
+-- stabil dibanding update satu-satu per baris (yang terbukti bikin
+-- koneksi HTTP putus di tengah proses untuk data ribuan baris).
+create or replace function bulk_update_topics(payload jsonb)
+returns void as $$
+  update news n
+  set topic_id = (u->>'topic_id')::int,
+      topic_label = u->>'topic_label'
+  from jsonb_array_elements(payload) as u
+  where n.id = (u->>'id')::bigint;
+$$ language sql;
+
 -- MIGRASI untuk tabel yang sudah ada duluan (dibuat sebelum kolom
 -- processed_content ditambahkan) -- jalankan baris ini di SQL Editor
 -- Supabase kalau tabel `news` kamu sudah ada isinya:

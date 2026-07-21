@@ -2,29 +2,35 @@
 Topic modeling (FR-05) pakai BERTopic.
 
 Beda dengan crawler/preprocessing yang inkremental (proses yang baru
-saja), topic modeling ini SELALU jalan ke SEMUA berita yang sudah
-di-preprocess sekaligus (bukan cuma yang belum punya topic_id) --
+saja), topic modeling ini SELALU jalan ke SEMUA berita DALAM JENDELA
+WAKTU TERTENTU sekaligus (bukan cuma yang belum punya topic_id) --
 BERTopic butuh melihat seluruh korpus dokumen bersamaan supaya bisa
 menemukan cluster yang bermakna. Menjalankan ke subset kecil per batch
 tidak akan menghasilkan topik yang stabil.
 
-Konsekuensinya: script ini idealnya dijalankan berkala (misal harian),
-bukan tiap 30 menit seperti crawling. topic_id bisa berubah tiap kali
-di-run ulang (cluster baru terbentuk) -- ini normal untuk topic modeling
-berbasis clustering, beda dengan ID yang permanen seperti primary key.
+Dibatasi ke TOPIC_MODELING_WINDOW_DAYS terakhir, bukan
+SELURUH riwayat sejak awal crawling: karena crawler jalan 24/7 selamanya,
+volume data terus bertambah setiap hari. Kalau topic modeling selalu
+proses SEMUA data sejak awal, waktu prosesnya juga terus membengkak
+setiap hari -- cepat atau lambat PASTI kena timeout di GitHub Actions
+(ini sudah kejadian nyata: run pertama 17 Juli sukses ~29 menit, tapi
+run-run berikutnya konsisten timeout di ~30 menit karena volume data
+terus bertambah). Membatasi ke jendela waktu tetap (misal 30 hari
+terakhir) membuat waktu proses stabil konstan dari waktu ke waktu,
+berapa lama pun crawler sudah berjalan total.
 
-CATATAN PERFORMA: proses ini berat -- download model embedding (~470MB,
-sekali saja lalu di-cache), lalu hitung embedding untuk SETIAP berita,
-baru clustering (UMAP + HDBSCAN). Untuk ribuan berita, ini bisa makan
-waktu beberapa menit sampai puluhan menit tergantung spesifikasi mesin.
-Jalankan dulu secara lokal untuk tahu berapa lama sebelum dipertimbangkan
-untuk diotomatisasi.
+Konsekuensinya: berita yang lebih lama dari jendela waktu ini topic_id-
+nya TIDAK diperbarui lagi (tetap dengan topic_id dari run terakhir waktu
+mereka masih dalam jendela). Ini trade-off yang wajar -- topik dari
+berita berbulan-bulan lalu memang tidak relevan lagi untuk "trending
+topics" hari ini.
 
-Jalankan: python topic_modeling.py
+Dijadwalkan berkala (misal harian), bukan tiap 30 menit seperti crawling.
 """
 
 import logging
 import sys
+from datetime import datetime, timedelta, timezone
 
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
@@ -44,6 +50,14 @@ EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 # awal yang wajar untuk korpus ribuan berita.
 MIN_TOPIC_SIZE = 10
 
+# Jendela waktu yang diproses -- lihat penjelasan panjang di docstring
+# atas soal kenapa ini krusial untuk cegah timeout berulang. 30 hari
+# dipilih sebagai titik awal yang wajar untuk "trending topics"; bisa
+# diperkecil (misal 14 hari) kalau volume harian sangat besar dan tetap
+# kena timeout, atau diperbesar kalau volumenya kecil dan masih ada sisa
+# waktu jauh dari batas timeout.
+TOPIC_MODELING_WINDOW_DAYS = 30
+
 
 def setup_logging():
     logging.basicConfig(
@@ -59,8 +73,12 @@ def main():
 
     db.init_db()
 
-    logger.info("Mengambil semua berita yang sudah di-preprocess...")
-    news_rows = db.get_all_processed_news()
+    since = datetime.now(timezone.utc) - timedelta(days=TOPIC_MODELING_WINDOW_DAYS)
+    logger.info(
+        "Mengambil berita %d hari terakhir (sejak %s) yang sudah di-preprocess...",
+        TOPIC_MODELING_WINDOW_DAYS, since.date(),
+    )
+    news_rows = db.get_recent_processed_news(since.isoformat())
     logger.info("Total %d berita akan di-topic-modeling.", len(news_rows))
 
     if len(news_rows) < MIN_TOPIC_SIZE * 2:
@@ -97,10 +115,17 @@ def main():
     # contoh: "0_korupsi_kejagung_kasus_febrie") kembali ke tiap berita.
     label_by_topic_id = dict(zip(topic_info["Topic"], topic_info["Name"]))
 
-    logger.info("Menyimpan hasil ke database...")
+    # Kumpulkan dulu semua hasil, baru simpan sekaligus lewat batch update
+    # -- update satu-satu per baris (ribuan HTTP request berurutan)
+    # terbukti bikin koneksi ke Supabase putus di tengah proses untuk
+    # data sebanyak ini.
+    logger.info("Menyimpan hasil ke database (batch update)...")
+    updates = []
     for row, topic_id in zip(news_rows, topics):
         label = label_by_topic_id.get(topic_id, "Tidak terklasifikasi")
-        db.update_topic(row["id"], int(topic_id), label)
+        updates.append({"id": row["id"], "topic_id": int(topic_id), "topic_label": label})
+
+    db.bulk_update_topics(updates)
 
     logger.info("=== Ringkasan topik yang ditemukan ===")
     for _, row in topic_info.iterrows():

@@ -108,7 +108,7 @@ def count_by_source() -> list[dict]:
 def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None) -> list[dict]:
     client = _get_client()
     query = client.table("news").select(
-        "id, title, content, processed_content, topic_id, topic_label, source, url, published_at, created_at"
+        "id, title, content, processed_content, topic_id, topic_label, sentiment, sentiment_confidence, source, url, published_at, created_at"
     )
     if source:
         query = query.eq("source", source)
@@ -174,6 +174,170 @@ def get_all_processed_news(limit: int = 10000) -> list[dict]:
     return rows[:limit]
 
 
+def get_recent_processed_news(since_iso: str, limit: int = 20000) -> list[dict]:
+    """
+    Sama seperti get_all_processed_news(), tapi dibatasi ke berita yang
+    created_at >= since_iso saja. Dipakai topic_modeling.py supaya waktu
+    proses TIDAK terus membengkak seiring korpus total terus bertambah
+    (crawler jalan 24/7 selamanya) -- tanpa batas waktu ini, topic
+    modeling pasti kena timeout cepat atau lambat karena selalu proses
+    SEMUA data sejak awal crawling.
+    """
+    client = _get_client()
+    rows: list[dict] = []
+    page_size = 1000
+    offset = 0
+    while len(rows) < limit:
+        resp = (
+            client.table("news")
+            .select("id, title, processed_content")
+            .not_.is_("processed_content", "null")
+            .neq("processed_content", "")
+            .gte("created_at", since_iso)
+            .order("id")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return rows[:limit]
+
+
 def update_topic(news_id: int, topic_id: int, topic_label: str) -> None:
     client = _get_client()
     client.table("news").update({"topic_id": topic_id, "topic_label": topic_label}).eq("id", news_id).execute()
+
+
+def bulk_update_topics(updates: list[dict]) -> None:
+    """
+    Update topic_id/topic_label untuk BANYAK berita sekaligus, dikirim
+    dalam batch (bukan satu HTTP request per baris). Dipakai topic_modeling.py
+    yang bisa memproses ribuan berita sekaligus -- kirim satu-satu terbukti
+    bikin koneksi HTTP putus di tengah jalan (httpx.RemoteProtocolError)
+    setelah puluhan ribu request berurutan dalam satu run yang lama.
+
+    Pakai RPC (Postgres function bulk_update_topics, lihat schema.sql),
+    BUKAN .upsert() -- upsert butuh semua kolom NOT NULL (title, content,
+    source, url) ada di payload, padahal kita cuma mau UPDATE 2 kolom.
+    RPC ini murni jalankan UPDATE, tidak menyentuh kolom lain sama sekali.
+
+    updates: list of {"id": int, "topic_id": int, "topic_label": str}
+    """
+    if not updates:
+        return
+    client = _get_client()
+    chunk_size = 500
+    for i in range(0, len(updates), chunk_size):
+        chunk = updates[i : i + chunk_size]
+        client.rpc("bulk_update_topics", {"payload": chunk}).execute()
+
+
+def get_unsentimented_news(limit: int = 200) -> list[dict]:
+    """
+    Ambil berita yang sudah di-preprocess tapi belum punya sentiment
+    (FR-06). Beda dengan topic modeling, sentiment analysis ini
+    inkremental per-berita -- tidak perlu lihat seluruh korpus sekaligus.
+    """
+    client = _get_client()
+    resp = (
+        client.table("news")
+        .select("id, title, content")
+        .not_.is_("processed_content", "null")
+        .is_("sentiment", "null")
+        .limit(limit)
+        .execute()
+    )
+    return resp.data
+
+
+def update_sentiment(news_id: int, sentiment: str, confidence: float) -> None:
+    client = _get_client()
+    client.table("news").update({"sentiment": sentiment, "sentiment_confidence": confidence}).eq("id", news_id).execute()
+
+
+def get_news_by_ids(ids: list[int]) -> list[dict]:
+    """
+    Ambil title+content untuk daftar ID spesifik (dipakai export_eval_sample.py).
+    Pakai .in_() filter -- AMAN dari batasan 1000 baris Supabase karena
+    hasilnya difilter dulu berdasarkan ID (bukan mengambil dari awal
+    tabel), jadi jumlah baris yang kembali otomatis sama dengan jumlah ID
+    yang diminta, bukan dibatasi urutan.
+    """
+    if not ids:
+        return []
+    client = _get_client()
+    resp = client.table("news").select("id, title, content").in_("id", ids).execute()
+    return resp.data
+
+
+def get_topic_news_counts(start_iso: str, end_iso: str) -> dict[int, dict]:
+    """
+    Hitung jumlah berita per topic_id dalam rentang waktu [start_iso, end_iso)
+    berdasarkan created_at. Return {topic_id: {"count": N, "label": "..."}}.
+    topic_id = -1 (outlier) dikecualikan. Pakai pagination karena bisa
+    lebih dari 1000 baris.
+    """
+    client = _get_client()
+    rows: list[dict] = []
+    offset = 0
+    page_size = 1000
+    while True:
+        resp = (
+            client.table("news")
+            .select("topic_id, topic_label")
+            .not_.is_("topic_id", "null")
+            .neq("topic_id", -1)
+            .gte("created_at", start_iso)
+            .lt("created_at", end_iso)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+
+    counts: dict[int, dict] = {}
+    for row in rows:
+        tid = row["topic_id"]
+        if tid not in counts:
+            counts[tid] = {"count": 0, "label": row.get("topic_label")}
+        counts[tid]["count"] += 1
+    return counts
+
+
+def insert_topic_trend(topic_id: int, topic_label: str, count_recent: int, count_previous: int, growth_rate: float, trend_score: float, calculated_at: str) -> None:
+    client = _get_client()
+    client.table("topic_trends").insert(
+        {
+            "topic_id": topic_id,
+            "topic_label": topic_label,
+            "news_count_recent": count_recent,
+            "news_count_previous": count_previous,
+            "growth_rate": growth_rate,
+            "trend_score": trend_score,
+            "calculated_at": calculated_at,
+        }
+    ).execute()
+
+
+def get_latest_trends(limit: int = 20) -> list[dict]:
+    """Ambil snapshot trend terbaru, diurutkan dari trend_score tertinggi."""
+    client = _get_client()
+    latest_resp = client.table("topic_trends").select("calculated_at").order("calculated_at", desc=True).limit(1).execute()
+    if not latest_resp.data:
+        return []
+    latest_time = latest_resp.data[0]["calculated_at"]
+    resp = (
+        client.table("topic_trends")
+        .select("*")
+        .eq("calculated_at", latest_time)
+        .order("trend_score", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return resp.data
