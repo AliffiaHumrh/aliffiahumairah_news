@@ -1,19 +1,8 @@
-name: Daily Topic Modeling & Trend Scoring
+name: Daily Topic Modeling, Trend Scoring & AI Summary
 
-# Topic modeling (FR-05) HARUS jalan ke SEMUA data sekaligus, bukan
-# inkremental seperti crawling -- jadi dijadwalkan 1x sehari, bukan tiap
-# 30 menit. Cache model embedding supaya run kedua dst tidak perlu
-# download ulang ~470MB tiap kali (mempercepat run berikutnya).
-#
-# trend_scoring.py (FR-07) sengaja digabung SATU JOB dengan topic
-# modeling, bukan workflow terpisah -- trend scoring butuh topic_id yang
-# sudah di-update duluan, jadi harus jalan SETELAH topic modeling selesai
-# dalam urutan yang terjamin. Kalau topic modeling gagal/timeout, trend
-# scoring otomatis ikut tidak jalan -- ini memang perilaku yang benar,
-# karena trend scoring tidak berguna dijalankan pakai topic_id yang basi.
 on:
   schedule:
-    - cron: '0 20 * * *'   # 20:00 UTC = 03:00 WIB (dini hari, setelah crawling seharian numpuk)
+    - cron: '0 20 * * *'   # 20:00 UTC = 03:00 WIB -- dini hari, setelah crawling seharian numpuk
   workflow_dispatch: {}
 
 concurrency:
@@ -55,3 +44,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python trend_scoring.py
+
+      - name: Jalankan AI summary (FR-08)
+        env:
+          DB_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python ai_summary.py
