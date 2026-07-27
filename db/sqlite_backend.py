@@ -178,7 +178,7 @@ def update_processed_content(news_id: int, processed_content: str) -> None:
         )
 
 
-def get_all_processed_news(limit: int = 10000) -> list[dict]:
+def get_all_processed_news(limit: int = 200000) -> list[dict]:
     """
     Ambil semua berita yang sudah punya processed_content (FR-05: input
     untuk topic modeling). Beda dengan get_unprocessed_news() -- ini

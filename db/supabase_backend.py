@@ -132,7 +132,7 @@ def update_processed_content(news_id: int, processed_content: str) -> None:
     client.table("news").update({"processed_content": processed_content}).eq("id", news_id).execute()
 
 
-def get_all_processed_news(limit: int = 10000) -> list[dict]:
+def get_all_processed_news(limit: int = 200000) -> list[dict]:
     """
     Ambil semua berita yang sudah punya processed_content (FR-05: input
     untuk topic modeling). Pakai pagination karena Supabase membatasi
