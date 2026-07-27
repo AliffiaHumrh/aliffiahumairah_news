@@ -1,11 +1,3 @@
-"""
-Backend SQLite. Dipakai kalau DB_BACKEND=sqlite. Nol setup, cocok untuk
-development lokal atau kalau belum ada project Supabase.
-
-Semua fungsi publik di sini punya signature yang sama persis dengan
-supabase_backend.py -- lihat db/__init__.py untuk facade-nya.
-"""
-
 import logging
 import sqlite3
 from contextlib import contextmanager
@@ -57,6 +49,19 @@ CREATE TABLE IF NOT EXISTS topic_summaries (
 );
 CREATE INDEX IF NOT EXISTS idx_topic_summaries_generated_at ON topic_summaries(generated_at);
 CREATE INDEX IF NOT EXISTS idx_topic_summaries_topic_id ON topic_summaries(topic_id);
+
+CREATE TABLE IF NOT EXISTS recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic_id INTEGER NOT NULL,
+    topic_label TEXT,
+    recommendation_score REAL,
+    dominant_sentiment TEXT,
+    reason TEXT,
+    status TEXT NOT NULL DEFAULT 'belum_ditinjau',
+    generated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recommendations_generated_at ON recommendations(generated_at);
+CREATE INDEX IF NOT EXISTS idx_recommendations_topic_id ON recommendations(topic_id);
 """
 
 
@@ -330,11 +335,11 @@ def get_latest_trends(limit: int = 20) -> list[dict]:
 
 
 def get_articles_for_topic(topic_id: int, limit: int = 10) -> list[dict]:
-    """Ambil beberapa artikel terbaru untuk satu topic_id (dipakai ai_summary.py)."""
+    """Ambil beberapa artikel terbaru untuk satu topic_id (dipakai ai_summary.py, recommendation_engine.py)."""
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, title, content FROM news
+            SELECT id, title, content, sentiment FROM news
             WHERE topic_id = ?
             ORDER BY created_at DESC
             LIMIT ?
@@ -367,6 +372,37 @@ def get_latest_summaries(limit: int = 20) -> list[dict]:
             SELECT * FROM topic_summaries
             WHERE generated_at = ?
             ORDER BY article_count DESC
+            LIMIT ?
+            """,
+            (latest_time, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_recommendation(topic_id: int, topic_label: str, recommendation_score: float, dominant_sentiment: str, reason: str, generated_at: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO recommendations
+                (topic_id, topic_label, recommendation_score, dominant_sentiment, reason, generated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (topic_id, topic_label, recommendation_score, dominant_sentiment, reason, generated_at),
+        )
+
+
+def get_latest_recommendations(limit: int = 20) -> list[dict]:
+    """Ambil snapshot rekomendasi terbaru, diurutkan dari skor tertinggi."""
+    with get_connection() as conn:
+        latest_time_row = conn.execute("SELECT MAX(generated_at) as t FROM recommendations").fetchone()
+        if not latest_time_row or not latest_time_row["t"]:
+            return []
+        latest_time = latest_time_row["t"]
+        rows = conn.execute(
+            """
+            SELECT * FROM recommendations
+            WHERE generated_at = ?
+            ORDER BY recommendation_score DESC
             LIMIT ?
             """,
             (latest_time, limit),

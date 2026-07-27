@@ -1,17 +1,3 @@
-"""
-Backend Supabase (Postgres). Dipakai kalau DB_BACKEND=supabase (default).
-
-Beda penting dengan sqlite_backend.py:
-- Tabel HARUS dibuat lebih dulu lewat SQL Editor di dashboard Supabase,
-  pakai schema.sql yang ada di root project ini. supabase-py (client
-  library, bukan admin API) tidak bisa menjalankan CREATE TABLE.
-  init_db() di sini hanya *mengecek* tabelnya sudah ada atau belum, dan
-  kasih instruksi jelas kalau belum.
-- Deduplikasi URL mengandalkan UNIQUE constraint di kolom `url` (sudah
-  didefinisikan di schema.sql) + error code Postgres 23505 saat insert
-  bentrok.
-"""
-
 import logging
 
 import config
@@ -344,11 +330,11 @@ def get_latest_trends(limit: int = 20) -> list[dict]:
 
 
 def get_articles_for_topic(topic_id: int, limit: int = 10) -> list[dict]:
-    """Ambil beberapa artikel terbaru untuk satu topic_id (dipakai ai_summary.py)."""
+    """Ambil beberapa artikel terbaru untuk satu topic_id (dipakai ai_summary.py, recommendation_engine.py)."""
     client = _get_client()
     resp = (
         client.table("news")
-        .select("id, title, content")
+        .select("id, title, content, sentiment")
         .eq("topic_id", topic_id)
         .order("created_at", desc=True)
         .limit(limit)
@@ -382,6 +368,38 @@ def get_latest_summaries(limit: int = 20) -> list[dict]:
         .select("*")
         .eq("generated_at", latest_time)
         .order("article_count", desc=True)
+        .limit(limit)
+        .execute()
+    )
+    return resp.data
+
+
+def insert_recommendation(topic_id: int, topic_label: str, recommendation_score: float, dominant_sentiment: str, reason: str, generated_at: str) -> None:
+    client = _get_client()
+    client.table("recommendations").insert(
+        {
+            "topic_id": topic_id,
+            "topic_label": topic_label,
+            "recommendation_score": recommendation_score,
+            "dominant_sentiment": dominant_sentiment,
+            "reason": reason,
+            "generated_at": generated_at,
+        }
+    ).execute()
+
+
+def get_latest_recommendations(limit: int = 20) -> list[dict]:
+    """Ambil snapshot rekomendasi terbaru, diurutkan dari skor tertinggi."""
+    client = _get_client()
+    latest_resp = client.table("recommendations").select("generated_at").order("generated_at", desc=True).limit(1).execute()
+    if not latest_resp.data:
+        return []
+    latest_time = latest_resp.data[0]["generated_at"]
+    resp = (
+        client.table("recommendations")
+        .select("*")
+        .eq("generated_at", latest_time)
+        .order("recommendation_score", desc=True)
         .limit(limit)
         .execute()
     )
