@@ -1,8 +1,8 @@
-name: Daily Topic Modeling, Trend Scoring & AI Summary
+name: Daily Topic Modeling, Trend Scoring, AI Summary & Recommendations
 
 on:
   schedule:
-    - cron: '0 20 * * *'   # 20:00 UTC = 03:00 WIB -- dini hari, setelah crawling seharian numpuk
+    - cron: '0 20 * * *'   # 20:00 UTC = 03:00 WIB
   workflow_dispatch: {}
 
 concurrency:
@@ -51,3 +51,10 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python ai_summary.py
+
+      - name: Jalankan recommendation engine (FR-09)
+        env:
+          DB_BACKEND: supabase
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python recommendation_engine.py
