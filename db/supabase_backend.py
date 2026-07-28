@@ -160,7 +160,7 @@ def get_all_processed_news(limit: int = 200000) -> list[dict]:
     return rows[:limit]
 
 
-def get_recent_processed_news(since_iso: str, limit: int = 20000) -> list[dict]:
+def get_recent_processed_news(since_iso: str, limit: int = 50000) -> list[dict]:
     """
     Sama seperti get_all_processed_news(), tapi dibatasi ke berita yang
     created_at >= since_iso saja. Dipakai topic_modeling.py supaya waktu
