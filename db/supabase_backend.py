@@ -22,10 +22,6 @@ def _get_client():
 
 
 def init_db():
-    """
-    Tidak membuat tabel (client library tidak punya akses DDL) -- cuma
-    verifikasi tabel `news` bisa diakses. Kalau belum ada, kasih instruksi.
-    """
     client = _get_client()
     try:
         client.table("news").select("id").limit(1).execute()
@@ -59,7 +55,6 @@ def insert_news(title: str, content: str, source: str, url: str, published_at: s
         ).execute()
         return True
     except Exception as exc:
-        # 23505 = unique_violation di Postgres -> url sudah ada, anggap duplikat
         if "23505" in str(exc) or "duplicate key" in str(exc).lower():
             return False
         logger.warning("Gagal insert ke Supabase: %s", exc)
@@ -73,18 +68,19 @@ def count_news() -> int:
 
 
 def count_by_source() -> list[dict]:
-    """
-    supabase-py (PostgREST) tidak punya GROUP BY langsung dari client.
-    Untuk volume data tahap awal ini cukup ambil kolom source lalu
-    diagregasi di Python. Kalau datanya sudah besar (>~50rb baris),
-    ganti ini dengan Postgres function (RPC) yang di-`GROUP BY` di
-    database langsung -- lebih efisien.
-    """
+    
     client = _get_client()
-    resp = client.table("news").select("source").execute()
     counts: dict[str, int] = {}
-    for row in resp.data:
-        counts[row["source"]] = counts.get(row["source"], 0) + 1
+    offset = 0
+    page_size = 1000
+    while True:
+        resp = client.table("news").select("source").range(offset, offset + page_size - 1).execute()
+        batch = resp.data
+        for row in batch:
+            counts[row["source"]] = counts.get(row["source"], 0) + 1
+        if len(batch) < page_size:
+            break
+        offset += page_size
     return [
         {"source": src, "total": total}
         for src, total in sorted(counts.items(), key=lambda x: -x[1])
@@ -106,16 +102,23 @@ def fetch_news(limit: int = 50, source: str | None = None, search: str | None = 
 
 
 def list_sources() -> list[str]:
+    
     client = _get_client()
-    resp = client.table("news").select("source").execute()
-    return sorted({row["source"] for row in resp.data})
+    all_sources: set[str] = set()
+    offset = 0
+    page_size = 1000
+    while True:
+        resp = client.table("news").select("source").range(offset, offset + page_size - 1).execute()
+        batch = resp.data
+        all_sources.update(row["source"] for row in batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return sorted(all_sources)
 
 
 def get_unprocessed_news(limit: int = 200) -> list[dict]:
-    """
-    Ambil berita yang belum punya processed_content (FR-04). Dipakai oleh
-    preprocess_all.py untuk batch processing.
-    """
+    
     client = _get_client()
     resp = (
         client.table("news")
@@ -133,11 +136,7 @@ def update_processed_content(news_id: int, processed_content: str) -> None:
 
 
 def get_all_processed_news(limit: int = 200000) -> list[dict]:
-    """
-    Ambil semua berita yang sudah punya processed_content (FR-05: input
-    untuk topic modeling). Pakai pagination karena Supabase membatasi
-    1000 baris per request (lihat pelajaran dari cleanup_html.py).
-    """
+
     client = _get_client()
     rows: list[dict] = []
     page_size = 1000
@@ -161,14 +160,7 @@ def get_all_processed_news(limit: int = 200000) -> list[dict]:
 
 
 def get_recent_processed_news(since_iso: str, limit: int = 50000) -> list[dict]:
-    """
-    Sama seperti get_all_processed_news(), tapi dibatasi ke berita yang
-    created_at >= since_iso saja. Dipakai topic_modeling.py supaya waktu
-    proses TIDAK terus membengkak seiring korpus total terus bertambah
-    (crawler jalan 24/7 selamanya) -- tanpa batas waktu ini, topic
-    modeling pasti kena timeout cepat atau lambat karena selalu proses
-    SEMUA data sejak awal crawling.
-    """
+    
     client = _get_client()
     rows: list[dict] = []
     page_size = 1000
@@ -180,7 +172,7 @@ def get_recent_processed_news(since_iso: str, limit: int = 50000) -> list[dict]:
             .not_.is_("processed_content", "null")
             .neq("processed_content", "")
             .gte("created_at", since_iso)
-            .order("id")
+            .order("id", desc=True)
             .range(offset, offset + page_size - 1)
             .execute()
         )
@@ -198,20 +190,6 @@ def update_topic(news_id: int, topic_id: int, topic_label: str) -> None:
 
 
 def bulk_update_topics(updates: list[dict]) -> None:
-    """
-    Update topic_id/topic_label untuk BANYAK berita sekaligus, dikirim
-    dalam batch (bukan satu HTTP request per baris). Dipakai topic_modeling.py
-    yang bisa memproses ribuan berita sekaligus -- kirim satu-satu terbukti
-    bikin koneksi HTTP putus di tengah jalan (httpx.RemoteProtocolError)
-    setelah puluhan ribu request berurutan dalam satu run yang lama.
-
-    Pakai RPC (Postgres function bulk_update_topics, lihat schema.sql),
-    BUKAN .upsert() -- upsert butuh semua kolom NOT NULL (title, content,
-    source, url) ada di payload, padahal kita cuma mau UPDATE 2 kolom.
-    RPC ini murni jalankan UPDATE, tidak menyentuh kolom lain sama sekali.
-
-    updates: list of {"id": int, "topic_id": int, "topic_label": str}
-    """
     if not updates:
         return
     client = _get_client()
@@ -222,11 +200,7 @@ def bulk_update_topics(updates: list[dict]) -> None:
 
 
 def get_unsentimented_news(limit: int = 200) -> list[dict]:
-    """
-    Ambil berita yang sudah di-preprocess tapi belum punya sentiment
-    (FR-06). Beda dengan topic modeling, sentiment analysis ini
-    inkremental per-berita -- tidak perlu lihat seluruh korpus sekaligus.
-    """
+
     client = _get_client()
     resp = (
         client.table("news")
@@ -245,13 +219,7 @@ def update_sentiment(news_id: int, sentiment: str, confidence: float) -> None:
 
 
 def get_news_by_ids(ids: list[int]) -> list[dict]:
-    """
-    Ambil title+content untuk daftar ID spesifik (dipakai export_eval_sample.py).
-    Pakai .in_() filter -- AMAN dari batasan 1000 baris Supabase karena
-    hasilnya difilter dulu berdasarkan ID (bukan mengambil dari awal
-    tabel), jadi jumlah baris yang kembali otomatis sama dengan jumlah ID
-    yang diminta, bukan dibatasi urutan.
-    """
+
     if not ids:
         return []
     client = _get_client()
@@ -260,12 +228,7 @@ def get_news_by_ids(ids: list[int]) -> list[dict]:
 
 
 def get_topic_news_counts(start_iso: str, end_iso: str) -> dict[int, dict]:
-    """
-    Hitung jumlah berita per topic_id dalam rentang waktu [start_iso, end_iso)
-    berdasarkan created_at. Return {topic_id: {"count": N, "label": "..."}}.
-    topic_id = -1 (outlier) dikecualikan. Pakai pagination karena bisa
-    lebih dari 1000 baris.
-    """
+
     client = _get_client()
     rows: list[dict] = []
     offset = 0
@@ -312,7 +275,6 @@ def insert_topic_trend(topic_id: int, topic_label: str, count_recent: int, count
 
 
 def get_latest_trends(limit: int = 20) -> list[dict]:
-    """Ambil snapshot trend terbaru, diurutkan dari trend_score tertinggi."""
     client = _get_client()
     latest_resp = client.table("topic_trends").select("calculated_at").order("calculated_at", desc=True).limit(1).execute()
     if not latest_resp.data:
@@ -334,7 +296,7 @@ def get_articles_for_topic(topic_id: int, limit: int = 10) -> list[dict]:
     client = _get_client()
     resp = (
         client.table("news")
-        .select("id, title, content, sentiment")
+        .select("id, title, content, sentiment, url")
         .eq("topic_id", topic_id)
         .order("created_at", desc=True)
         .limit(limit)
@@ -357,7 +319,6 @@ def insert_topic_summary(topic_id: int, topic_label: str, summary_text: str, art
 
 
 def get_latest_summaries(limit: int = 20) -> list[dict]:
-    """Ambil snapshot ringkasan topik terbaru."""
     client = _get_client()
     latest_resp = client.table("topic_summaries").select("generated_at").order("generated_at", desc=True).limit(1).execute()
     if not latest_resp.data:
@@ -389,7 +350,6 @@ def insert_recommendation(topic_id: int, topic_label: str, recommendation_score:
 
 
 def get_latest_recommendations(limit: int = 20) -> list[dict]:
-    """Ambil snapshot rekomendasi terbaru, diurutkan dari skor tertinggi."""
     client = _get_client()
     latest_resp = client.table("recommendations").select("generated_at").order("generated_at", desc=True).limit(1).execute()
     if not latest_resp.data:

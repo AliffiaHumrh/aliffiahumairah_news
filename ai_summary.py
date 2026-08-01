@@ -8,8 +8,8 @@ from sentence_transformers import SentenceTransformer
 import db
 
 EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
-ARTICLES_TO_FETCH = 20       # ambil sampai 20 artikel terbaru per topik
-REPRESENTATIVE_COUNT = 4     # pilih 4 judul paling representatif dari situ
+ARTICLES_TO_FETCH = 20
+REPRESENTATIVE_COUNT = 4
 MIN_ARTICLES_FOR_SUMMARY = 3
 
 
@@ -21,16 +21,17 @@ def setup_logging():
     )
 
 
-def select_representative_titles(model: SentenceTransformer, titles: list[str], count: int) -> list[str]:
+def select_representative_articles(model: SentenceTransformer, articles: list[dict], count: int) -> list[dict]:
     """
-    Pilih N judul yang paling "mewakili" keseluruhan topik -- diukur dari
-    kedekatan (cosine similarity) ke centroid (rata-rata) embedding semua
-    judul di topik itu. Judul yang paling dekat ke centroid dianggap
-    paling representatif dari "inti" topik tersebut.
+    Pilih N artikel yang judulnya paling "mewakili" keseluruhan topik --
+    diukur dari kedekatan (cosine similarity) ke centroid embedding
+    semua judul. Return list of dict (bukan cuma string judul) supaya
+    url-nya ikut terbawa untuk dipakai bikin link nanti.
     """
-    if len(titles) <= count:
-        return titles
+    if len(articles) <= count:
+        return articles
 
+    titles = [a["title"] for a in articles]
     embeddings = model.encode(titles)
     centroid = np.mean(embeddings, axis=0)
 
@@ -39,11 +40,18 @@ def select_representative_titles(model: SentenceTransformer, titles: list[str], 
 
     top_indices = np.argsort(-similarities)[:count]
     top_indices_sorted = sorted(top_indices)
-    return [titles[i] for i in top_indices_sorted]
+    return [articles[i] for i in top_indices_sorted]
 
 
-def build_extractive_summary(article_count: int, representative_titles: list[str]) -> str:
-    bullet_list = "\n".join(f"- {t}" for t in representative_titles)
+def build_extractive_summary(article_count: int, representative_articles: list[dict]) -> str:
+    """
+    Format output jadi markdown -- tiap judul jadi LINK ke artikel asli
+    [judul](url). Dashboard (streamlit_app.py) merender ini pakai
+    st.markdown(), bukan st.text(), supaya link-nya bisa diklik.
+    """
+    bullet_list = "\n".join(
+        f"- [{a['title']}]({a['url']})" for a in representative_articles if a.get("url")
+    )
     return f"Topik ini mencakup {article_count} berita. Beberapa di antaranya:\n{bullet_list}"
 
 
@@ -79,8 +87,7 @@ def main():
         if not articles:
             continue
 
-        titles = [a["title"] for a in articles]
-        representative = select_representative_titles(model, titles, REPRESENTATIVE_COUNT)
+        representative = select_representative_articles(model, articles, REPRESENTATIVE_COUNT)
         summary_text = build_extractive_summary(info["count"], representative)
 
         db.insert_topic_summary(

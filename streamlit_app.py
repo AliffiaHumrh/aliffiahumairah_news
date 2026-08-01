@@ -1,3 +1,14 @@
+"""
+Dashboard AI-Based News Trend Intelligence.
+
+Nampilin hasil dari seluruh pipeline (FR-01 s.d. FR-09): berita mentah,
+topik trending, ringkasan per topik, dan rekomendasi konten. Dashboard
+ini murni BACA data yang sudah dihasilkan pipeline otomatis (GitHub
+Actions) -- tidak melakukan crawling/modeling apa pun sendiri.
+
+Jalankan: streamlit run streamlit_app.py
+"""
+
 import pandas as pd
 import streamlit as st
 
@@ -6,13 +17,24 @@ import db
 
 st.set_page_config(page_title="News Intelligence Dashboard", page_icon="📰", layout="wide")
 
-st.title("📰 AI-Based News Trend Intelligence Dashboard")
-st.caption(
-    f"Backend database: **{config.DB_BACKEND}** · Data dihasilkan otomatis oleh "
-    "pipeline crawling (tiap 30 menit) dan topic modeling/trend/rekomendasi (1x sehari)."
-)
+# --------------------------------------------------------------------
+# SIDEBAR: navigasi + kontrol
+# --------------------------------------------------------------------
+st.sidebar.title("📰 News Intelligence")
+st.sidebar.caption(f"Backend: **{config.DB_BACKEND}**")
 
-if st.sidebar.button("🔄 Refresh semua data"):
+PAGES = {
+    "🏠 Overview": "overview",
+    "📈 Trending Topics": "trending",
+    "📝 AI Summary": "summary",
+    "⭐ Rekomendasi": "recommend",
+    "📰 Berita": "news",
+}
+page_label = st.sidebar.radio("Halaman", list(PAGES.keys()), label_visibility="collapsed")
+page = PAGES[page_label]
+
+st.sidebar.divider()
+if st.sidebar.button("🔄 Refresh semua data", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
 
@@ -52,12 +74,16 @@ def load_news(limit, source, search):
     return db.fetch_news(limit=limit, source=source or None, search=search or None)
 
 
-tab_overview, tab_trending, tab_summary, tab_recommend, tab_news = st.tabs(
-    ["🏠 Overview", "📈 Trending Topics", "📝 AI Summary", "⭐ Rekomendasi", "📰 Berita"]
-)
+# --------------------------------------------------------------------
+# HALAMAN: OVERVIEW
+# --------------------------------------------------------------------
+if page == "overview":
+    st.title("🏠 Overview")
+    st.caption(
+        "Data dihasilkan otomatis oleh pipeline crawling (tiap 30 menit) "
+        "dan topic modeling/trend/rekomendasi (1x sehari)."
+    )
 
-# TAB: OVERVIEW
-with tab_overview:
     try:
         total = load_total_news()
         trends = load_trends()
@@ -85,9 +111,11 @@ with tab_overview:
             "sudah pernah jalan sukses."
         )
 
-# TAB: TRENDING TOPICS
-with tab_trending:
-    st.subheader("Topik yang sedang trending")
+# --------------------------------------------------------------------
+# HALAMAN: TRENDING TOPICS (FR-07)
+# --------------------------------------------------------------------
+elif page == "trending":
+    st.title("📈 Trending Topics")
     st.caption("Dibandingkan volume berita 24 jam terakhir vs 24-48 jam sebelumnya.")
 
     trends = load_trends()
@@ -118,9 +146,11 @@ with tab_trending:
             top15 = df.head(15).set_index("topic_label")
             st.bar_chart(top15["trend_score"])
 
-# TAB: AI SUMMARY
-with tab_summary:
-    st.subheader("Ringkasan topik")
+# --------------------------------------------------------------------
+# HALAMAN: AI SUMMARY (FR-08)
+# --------------------------------------------------------------------
+elif page == "summary":
+    st.title("📝 AI Summary")
     st.caption(
         "Ringkasan bersifat EKSTRAKTIF -- disusun dari judul-judul artikel asli "
         "yang paling representatif, bukan ditulis ulang AI. Ini pilihan desain "
@@ -131,7 +161,7 @@ with tab_summary:
     if not summaries:
         st.info("Belum ada ringkasan. Jalankan ai_summary.py dulu.")
     else:
-        search_summary = st.text_input("Cari topik", key="search_summary", placeholder="mis. korupsi, ekonomi, ...")
+        search_summary = st.text_input("Cari topik", placeholder="mis. korupsi, ekonomi, ...")
         filtered = [
             s for s in summaries
             if not search_summary or search_summary.lower() in (s.get("topic_label") or "").lower()
@@ -144,11 +174,13 @@ with tab_summary:
         for s in filtered:
             with st.container(border=True):
                 st.markdown(f"**{s['topic_label']}** &nbsp;·&nbsp; {s['article_count']} berita")
-                st.text(s["summary_text"])
+                st.markdown(s["summary_text"])
 
-# TAB: REKOMENDASI
-with tab_recommend:
-    st.subheader("Rekomendasi topik untuk diliput")
+# --------------------------------------------------------------------
+# HALAMAN: REKOMENDASI (FR-09)
+# --------------------------------------------------------------------
+elif page == "recommend":
+    st.title("⭐ Rekomendasi")
     st.caption(
         "Skor dihitung murni dari growth rate topik (seberapa cepat topik ini "
         "sedang naik), BUKAN dari sentimen. Topik dengan sentimen negatif "
@@ -186,18 +218,20 @@ with tab_recommend:
                     st.metric("Skor", f"{r.get('recommendation_score', 0):.0f}")
                     st.markdown(f"{emoji} {sentiment}")
 
-# TAB: BERITA (preview mentah, dari versi awal dashboard)
-with tab_news:
-    st.subheader("Preview berita mentah")
+# --------------------------------------------------------------------
+# HALAMAN: BERITA (preview mentah)
+# --------------------------------------------------------------------
+elif page == "news":
+    st.title("📰 Berita")
 
     col_a, col_b, col_c = st.columns([2, 2, 1])
     with col_a:
         sources = load_sources()
-        selected_source = st.selectbox("Sumber", ["Semua sumber"] + sources, key="news_source")
+        selected_source = st.selectbox("Sumber", ["Semua sumber"] + sources)
     with col_b:
-        search_news = st.text_input("Cari di judul", key="news_search", placeholder="mis. ekonomi, pemilu, ...")
+        search_news = st.text_input("Cari di judul", placeholder="mis. ekonomi, pemilu, ...")
     with col_c:
-        limit_news = st.slider("Jumlah", min_value=10, max_value=200, value=50, step=10, key="news_limit")
+        limit_news = st.slider("Jumlah", min_value=10, max_value=200, value=50, step=10)
 
     source_param = None if selected_source == "Semua sumber" else selected_source
     news_items = load_news(limit_news, source_param, search_news)

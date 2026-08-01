@@ -180,9 +180,7 @@ def update_processed_content(news_id: int, processed_content: str) -> None:
 
 def get_all_processed_news(limit: int = 200000) -> list[dict]:
     """
-    Ambil semua berita yang sudah punya processed_content (FR-05: input
-    untuk topic modeling). Beda dengan get_unprocessed_news() -- ini
-    ambil yang SUDAH diproses, bukan yang belum.
+    Ambil semua berita yang sudah punya processed_content. Beda dengan get_unprocessed_news()
     """
     with get_connection() as conn:
         rows = conn.execute(
@@ -339,7 +337,7 @@ def get_articles_for_topic(topic_id: int, limit: int = 10) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             """
-            SELECT id, title, content, sentiment FROM news
+            SELECT id, title, content, sentiment, url FROM news
             WHERE topic_id = ?
             ORDER BY created_at DESC
             LIMIT ?
