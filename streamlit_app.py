@@ -164,7 +164,9 @@ elif page == "summary":
         search_summary = st.text_input("Cari topik", placeholder="mis. korupsi, ekonomi, ...")
         filtered = [
             s for s in summaries
-            if not search_summary or search_summary.lower() in (s.get("topic_label") or "").lower()
+            if not search_summary
+            or search_summary.lower() in (s.get("topic_label") or "").lower()
+            or search_summary.lower() in (s.get("summary_text") or "").lower()
         ]
         filtered.sort(key=lambda s: -(s.get("article_count") or 0))
 
