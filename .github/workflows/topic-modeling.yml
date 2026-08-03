@@ -29,37 +29,30 @@ jobs:
           key: hf-model-${{ runner.os }}-paraphrase-multilingual-MiniLM-L12-v2
 
       - name: Install dependencies
-        run: pip install python-dotenv supabase bertopic sentence-transformers transformers torch
+        run: pip install python-dotenv supabase bertopic sentence-transformers
 
-      - name: Jalankan topic modeling
+      - name: Jalankan topic modeling (FR-05)
         env:
           DB_BACKEND: supabase
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python topic_modeling.py
 
-      - name: Jalankan trend scoring
+      - name: Jalankan trend scoring (FR-07)
         env:
           DB_BACKEND: supabase
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python trend_scoring.py
 
-      - name: Jalankan AI summary
+      - name: Jalankan AI summary (FR-08)
         env:
           DB_BACKEND: supabase
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python ai_summary.py
 
-      - name: Jalankan sentiment analysis tambahan sebelum rekomendasi
-        env:
-          DB_BACKEND: supabase
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: python sentiment_analysis.py
-
-      - name: Jalankan recommendation engine
+      - name: Jalankan recommendation engine (FR-09)
         env:
           DB_BACKEND: supabase
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
