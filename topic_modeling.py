@@ -1,33 +1,3 @@
-"""
-Topic modeling (FR-05) pakai BERTopic.
-
-Beda dengan crawler/preprocessing yang inkremental (proses yang baru
-saja), topic modeling ini SELALU jalan ke SEMUA berita DALAM JENDELA
-WAKTU TERTENTU sekaligus (bukan cuma yang belum punya topic_id) --
-BERTopic butuh melihat seluruh korpus dokumen bersamaan supaya bisa
-menemukan cluster yang bermakna. Menjalankan ke subset kecil per batch
-tidak akan menghasilkan topik yang stabil.
-
-Dibatasi ke TOPIC_MODELING_WINDOW_DAYS terakhir, bukan
-SELURUH riwayat sejak awal crawling: karena crawler jalan 24/7 selamanya,
-volume data terus bertambah setiap hari. Kalau topic modeling selalu
-proses SEMUA data sejak awal, waktu prosesnya juga terus membengkak
-setiap hari -- cepat atau lambat PASTI kena timeout di GitHub Actions
-(ini sudah kejadian nyata: run pertama 17 Juli sukses ~29 menit, tapi
-run-run berikutnya konsisten timeout di ~30 menit karena volume data
-terus bertambah). Membatasi ke jendela waktu tetap (misal 30 hari
-terakhir) membuat waktu proses stabil konstan dari waktu ke waktu,
-berapa lama pun crawler sudah berjalan total.
-
-Konsekuensinya: berita yang lebih lama dari jendela waktu ini topic_id-
-nya TIDAK diperbarui lagi (tetap dengan topic_id dari run terakhir waktu
-mereka masih dalam jendela). Ini trade-off yang wajar -- topik dari
-berita berbulan-bulan lalu memang tidak relevan lagi untuk "trending
-topics" hari ini.
-
-Dijadwalkan berkala (misal harian), bukan tiap 30 menit seperti crawling.
-"""
-
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
@@ -37,25 +7,13 @@ from sentence_transformers import SentenceTransformer
 
 import db
 
-# Model embedding multibahasa -- mendukung Bahasa Indonesia meski bukan
-# model khusus Indonesia (tidak ada model sentence-embedding Indonesia
-# semapan model multibahasa ini). Ukuran sedang (~470MB), akurasi cukup
-# baik untuk multibahasa termasuk Indonesia.
+# Model embedding multibahasa
 EMBEDDING_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
-# Minimal berapa berita supaya dianggap satu topik -- kalau kurang dari
-# ini, dianggap noise/outlier (topic_id = -1). Nilai lebih kecil = lebih
-# banyak topik granular tapi berisiko topik "sampah" dengan 2-3 berita.
-# Angka ini perlu di-tuning setelah lihat hasilnya -- 10 adalah titik
-# awal yang wajar untuk korpus ribuan berita.
+
 MIN_TOPIC_SIZE = 10
 
-# Jendela waktu yang diproses -- lihat penjelasan panjang di docstring
-# atas soal kenapa ini krusial untuk cegah timeout berulang. 30 hari
-# dipilih sebagai titik awal yang wajar untuk "trending topics"; bisa
-# diperkecil (misal 14 hari) kalau volume harian sangat besar dan tetap
-# kena timeout, atau diperbesar kalau volumenya kecil dan masih ada sisa
-# waktu jauh dari batas timeout.
+
 TOPIC_MODELING_WINDOW_DAYS = 30
 
 
