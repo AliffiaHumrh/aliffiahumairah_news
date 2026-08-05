@@ -1,14 +1,3 @@
-"""
-Dashboard AI-Based News Trend Intelligence.
-
-Nampilin hasil dari seluruh pipeline (FR-01 s.d. FR-09): berita mentah,
-topik trending, ringkasan per topik, dan rekomendasi konten. Dashboard
-ini murni BACA data yang sudah dihasilkan pipeline otomatis (GitHub
-Actions) -- tidak melakukan crawling/modeling apa pun sendiri.
-
-Jalankan: streamlit run streamlit_app.py
-"""
-
 import pandas as pd
 import streamlit as st
 
