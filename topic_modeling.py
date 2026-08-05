@@ -69,14 +69,9 @@ def main():
     topic_info = topic_model.get_topic_info()
     logger.info("Ditemukan %d topik (di luar outlier).", len(topic_info[topic_info["Topic"] != -1]))
 
-    # Simpan topic_id + label (nama topik hasil auto-generate BERTopic,
-    # contoh: "0_korupsi_kejagung_kasus_febrie") kembali ke tiap berita.
     label_by_topic_id = dict(zip(topic_info["Topic"], topic_info["Name"]))
 
-    # Kumpulkan dulu semua hasil, baru simpan sekaligus lewat batch update
-    # -- update satu-satu per baris (ribuan HTTP request berurutan)
-    # terbukti bikin koneksi ke Supabase putus di tengah proses untuk
-    # data sebanyak ini.
+
     logger.info("Menyimpan hasil ke database (batch update)...")
     updates = []
     for row, topic_id in zip(news_rows, topics):
