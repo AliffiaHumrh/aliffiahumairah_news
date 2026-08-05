@@ -376,6 +376,12 @@ def get_latest_summaries(limit: int = 20) -> list[dict]:
         ).fetchall()
     return [dict(r) for r in rows]
 
+def update_recommendation_status(recommendation_id: int, status: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE recommendations SET status = ? WHERE id = ?",
+            (status, recommendation_id),
+        )
 
 def insert_recommendation(topic_id: int, topic_label: str, recommendation_score: float, dominant_sentiment: str, reason: str, generated_at: str) -> None:
     with get_connection() as conn:

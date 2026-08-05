@@ -17,9 +17,7 @@ import db
 
 st.set_page_config(page_title="News Intelligence Dashboard", page_icon="📰", layout="wide")
 
-# --------------------------------------------------------------------
 # SIDEBAR: navigasi + kontrol
-# --------------------------------------------------------------------
 st.sidebar.title("📰 News Intelligence")
 st.sidebar.caption(f"Backend: **{config.DB_BACKEND}**")
 
@@ -74,9 +72,7 @@ def load_news(limit, source, search):
     return db.fetch_news(limit=limit, source=source or None, search=search or None)
 
 
-# --------------------------------------------------------------------
 # HALAMAN: OVERVIEW
-# --------------------------------------------------------------------
 if page == "overview":
     st.title("🏠 Overview")
     st.caption(
@@ -111,9 +107,7 @@ if page == "overview":
             "sudah pernah jalan sukses."
         )
 
-# --------------------------------------------------------------------
 # HALAMAN: TRENDING TOPICS (FR-07)
-# --------------------------------------------------------------------
 elif page == "trending":
     st.title("📈 Trending Topics")
     st.caption("Dibandingkan volume berita 24 jam terakhir vs 24-48 jam sebelumnya.")
@@ -146,9 +140,7 @@ elif page == "trending":
             top15 = df.head(15).set_index("topic_label")
             st.bar_chart(top15["trend_score"])
 
-# --------------------------------------------------------------------
 # HALAMAN: AI SUMMARY (FR-08)
-# --------------------------------------------------------------------
 elif page == "summary":
     st.title("📝 AI Summary")
     st.caption(
@@ -178,9 +170,7 @@ elif page == "summary":
                 st.markdown(f"**{s['topic_label']}** &nbsp;·&nbsp; {s['article_count']} berita")
                 st.markdown(s["summary_text"])
 
-# --------------------------------------------------------------------
 # HALAMAN: REKOMENDASI (FR-09)
-# --------------------------------------------------------------------
 elif page == "recommend":
     st.title("⭐ Rekomendasi")
     st.caption(
@@ -210,19 +200,37 @@ elif page == "recommend":
         for r in filtered_recs:
             sentiment = r.get("dominant_sentiment", "tidak diketahui")
             emoji = sentiment_emoji.get(sentiment, "❔")
+            status = r.get("status", "belum_ditinjau")
+            status_emoji = {"digunakan": "✅", "tidak_digunakan": "❌", "belum_ditinjau": "⏳"}.get(status, "⏳")
+
             with st.container(border=True):
                 col1, col2 = st.columns([5, 1])
                 with col1:
                     st.markdown(f"**{r['topic_label']}**")
                     st.write(r.get("reason", ""))
-                    st.caption(f"Status: {r.get('status', 'belum_ditinjau')}")
+                    st.caption(f"{status_emoji} Status: {status}")
                 with col2:
                     st.metric("Skor", f"{r.get('recommendation_score', 0):.0f}")
                     st.markdown(f"{emoji} {sentiment}")
 
-# --------------------------------------------------------------------
+                btn_col1, btn_col2, btn_col3 = st.columns(3)
+                with btn_col1:
+                    if st.button("✅ Digunakan", key=f"used_{r['id']}", use_container_width=True):
+                        db.update_recommendation_status(r["id"], "digunakan")
+                        st.cache_data.clear()
+                        st.rerun()
+                with btn_col2:
+                    if st.button("❌ Tidak digunakan", key=f"unused_{r['id']}", use_container_width=True):
+                        db.update_recommendation_status(r["id"], "tidak_digunakan")
+                        st.cache_data.clear()
+                        st.rerun()
+                with btn_col3:
+                    if st.button("↩️ Reset", key=f"reset_{r['id']}", use_container_width=True):
+                        db.update_recommendation_status(r["id"], "belum_ditinjau")
+                        st.cache_data.clear()
+                        st.rerun()
+
 # HALAMAN: BERITA (preview mentah)
-# --------------------------------------------------------------------
 elif page == "news":
     st.title("📰 Berita")
 

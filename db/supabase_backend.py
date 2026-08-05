@@ -364,3 +364,7 @@ def get_latest_recommendations(limit: int = 20) -> list[dict]:
         .execute()
     )
     return resp.data
+
+def update_recommendation_status(recommendation_id: int, status: str) -> None:
+    client = _get_client()
+    client.table("recommendations").update({"status": status}).eq("id", recommendation_id).execute()
