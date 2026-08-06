@@ -48,5 +48,5 @@ get_articles_for_topic = _backend.get_articles_for_topic
 insert_topic_summary = _backend.insert_topic_summary
 get_latest_summaries = _backend.get_latest_summaries
 insert_recommendation = _backend.insert_recommendation
-get_latest_recommendations = _backend
+get_latest_recommendations = _backend.get_latest_recommendations
 update_recommendation_status = _backend.update_recommendation_status
