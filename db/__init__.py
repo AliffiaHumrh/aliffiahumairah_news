@@ -1,12 +1,3 @@
-"""
-Facade database. Semua kode lain (crawler.py, scheduler.py, main.py,
-streamlit_app.py) import dari sini saja: `import db`, lalu panggil
-`db.insert_news(...)`, `db.fetch_news(...)`, dst.
-
-Backend aktif ditentukan oleh config.DB_BACKEND ("supabase" atau
-"sqlite"). Ganti backend cukup lewat .env, tidak perlu ubah kode lain.
-"""
-
 import logging
 
 import config
@@ -50,3 +41,6 @@ get_latest_summaries = _backend.get_latest_summaries
 insert_recommendation = _backend.insert_recommendation
 get_latest_recommendations = _backend.get_latest_recommendations
 update_recommendation_status = _backend.update_recommendation_status
+get_recent_sentiment_data = _backend.get_recent_sentiment_data
+insert_model_evaluation_log = _backend.insert_model_evaluation_log
+get_latest_model_evaluation_logs = _backend.get_latest_model_evaluation_logs

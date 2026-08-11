@@ -62,6 +62,22 @@ CREATE TABLE IF NOT EXISTS recommendations (
 );
 CREATE INDEX IF NOT EXISTS idx_recommendations_generated_at ON recommendations(generated_at);
 CREATE INDEX IF NOT EXISTS idx_recommendations_topic_id ON recommendations(topic_id);
+
+CREATE TABLE IF NOT EXISTS model_evaluation_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    log_type TEXT NOT NULL,
+    model_name TEXT,
+    total_analyzed INTEGER,
+    avg_confidence REAL,
+    pct_low_confidence REAL,
+    count_positive INTEGER,
+    count_neutral INTEGER,
+    count_negative INTEGER,
+    accuracy REAL,
+    notes TEXT,
+    logged_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_model_eval_logged_at ON model_evaluation_log(logged_at);
 """
 
 
@@ -411,4 +427,51 @@ def get_latest_recommendations(limit: int = 20) -> list[dict]:
             """,
             (latest_time, limit),
         ).fetchall()
+    return [dict(r) for r in rows]
+
+def get_recent_sentiment_data(start_iso: str, end_iso: str) -> list[dict]:
+    """Ambil sentiment+confidence berita dalam rentang waktu (dipakai model_monitoring.py FR-12)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT sentiment, sentiment_confidence FROM news
+            WHERE sentiment IS NOT NULL
+              AND created_at >= ? AND created_at < ?
+            """,
+            (start_iso, end_iso),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def insert_model_evaluation_log(
+    log_type: str, logged_at: str, model_name: str = None, total_analyzed: int = None,
+    avg_confidence: float = None, pct_low_confidence: float = None,
+    count_positive: int = None, count_neutral: int = None, count_negative: int = None,
+    accuracy: float = None, notes: str = None,
+) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO model_evaluation_log
+                (log_type, model_name, total_analyzed, avg_confidence, pct_low_confidence,
+                 count_positive, count_neutral, count_negative, accuracy, notes, logged_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (log_type, model_name, total_analyzed, avg_confidence, pct_low_confidence,
+             count_positive, count_neutral, count_negative, accuracy, notes, logged_at),
+        )
+
+
+def get_latest_model_evaluation_logs(log_type: str = None, limit: int = 30) -> list[dict]:
+    with get_connection() as conn:
+        if log_type:
+            rows = conn.execute(
+                "SELECT * FROM model_evaluation_log WHERE log_type = ? ORDER BY logged_at DESC LIMIT ?",
+                (log_type, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM model_evaluation_log ORDER BY logged_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     return [dict(r) for r in rows]

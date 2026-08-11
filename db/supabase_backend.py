@@ -368,3 +368,59 @@ def get_latest_recommendations(limit: int = 20) -> list[dict]:
 def update_recommendation_status(recommendation_id: int, status: str) -> None:
     client = _get_client()
     client.table("recommendations").update({"status": status}).eq("id", recommendation_id).execute()
+
+def get_recent_sentiment_data(start_iso: str, end_iso: str) -> list[dict]:
+    """Ambil sentiment+confidence berita dalam rentang waktu (dipakai model_monitoring.py FR-12)."""
+    client = _get_client()
+    rows: list[dict] = []
+    offset = 0
+    page_size = 1000
+    while True:
+        resp = (
+            client.table("news")
+            .select("sentiment, sentiment_confidence")
+            .not_.is_("sentiment", "null")
+            .gte("created_at", start_iso)
+            .lt("created_at", end_iso)
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data
+        rows.extend(batch)
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return rows
+
+
+def insert_model_evaluation_log(
+    log_type: str, logged_at: str, model_name: str = None, total_analyzed: int = None,
+    avg_confidence: float = None, pct_low_confidence: float = None,
+    count_positive: int = None, count_neutral: int = None, count_negative: int = None,
+    accuracy: float = None, notes: str = None,
+) -> None:
+    client = _get_client()
+    client.table("model_evaluation_log").insert(
+        {
+            "log_type": log_type,
+            "model_name": model_name,
+            "total_analyzed": total_analyzed,
+            "avg_confidence": avg_confidence,
+            "pct_low_confidence": pct_low_confidence,
+            "count_positive": count_positive,
+            "count_neutral": count_neutral,
+            "count_negative": count_negative,
+            "accuracy": accuracy,
+            "notes": notes,
+            "logged_at": logged_at,
+        }
+    ).execute()
+
+
+def get_latest_model_evaluation_logs(log_type: str = None, limit: int = 30) -> list[dict]:
+    client = _get_client()
+    query = client.table("model_evaluation_log").select("*")
+    if log_type:
+        query = query.eq("log_type", log_type)
+    resp = query.order("logged_at", desc=True).limit(limit).execute()
+    return resp.data

@@ -16,6 +16,7 @@ PAGES = {
     "📝 AI Summary": "summary",
     "⭐ Rekomendasi": "recommend",
     "📰 Berita": "news",
+    "🔍 Model Monitoring": "monitoring",
 }
 page_label = st.sidebar.radio("Halaman", list(PAGES.keys()), label_visibility="collapsed")
 page = PAGES[page_label]
@@ -60,6 +61,9 @@ def load_sources():
 def load_news(limit, source, search):
     return db.fetch_news(limit=limit, source=source or None, search=search or None)
 
+@st.cache_data(ttl=300)
+def load_model_logs():
+    return db.get_latest_model_evaluation_logs(limit=30)
 
 # HALAMAN: OVERVIEW
 if page == "overview":
@@ -254,3 +258,49 @@ elif page == "news":
                 if content:
                     preview = content if len(content) < 280 else content[:280] + "..."
                     st.write(preview)
+
+# HALAMAN: Monitoring Model
+elif page == "monitoring":
+    st.title("🔍 Model Monitoring")
+    st.caption(
+        "Confidence bukan akurasi asli, akurasi butuh label manual manusia "
+        "sebagai pembanding (lihat evaluate_models.py). Confidence rendah "
+        "cuma sinyal model 'kurang yakin', bisa jadi tanda awal model perlu "
+        "dievaluasi ulang."
+    )
+
+    logs = load_model_logs()
+    if not logs:
+        st.info("Belum ada log. Jalankan model_monitoring.py atau evaluate_models.py dulu.")
+    else:
+        confidence_logs = [l for l in logs if l["log_type"] == "daily_confidence"]
+        accuracy_logs = [l for l in logs if l["log_type"] == "manual_accuracy"]
+
+        st.subheader("📊 Statistik Confidence Harian (otomatis)")
+        if confidence_logs:
+            df_conf = pd.DataFrame(confidence_logs).sort_values("logged_at")
+            st.line_chart(df_conf.set_index("logged_at")["avg_confidence"])
+            st.dataframe(
+                df_conf[["logged_at", "total_analyzed", "avg_confidence", "pct_low_confidence"]]
+                .rename(columns={
+                    "logged_at": "Waktu", "total_analyzed": "Total Dianalisis",
+                    "avg_confidence": "Rata-rata Confidence", "pct_low_confidence": "% Confidence Rendah",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Belum ada data confidence harian.")
+
+        st.subheader("🎯 Riwayat Evaluasi Akurasi (manual)")
+        if accuracy_logs:
+            df_acc = pd.DataFrame(accuracy_logs).sort_values("logged_at")
+            st.dataframe(
+                df_acc[["logged_at", "model_name", "total_analyzed", "accuracy", "notes"]]
+                .rename(columns={
+                    "logged_at": "Waktu", "model_name": "Model",
+                    "total_analyzed": "Sampel", "accuracy": "Akurasi", "notes": "Catatan",
+                }),
+                use_container_width=True, hide_index=True,
+            )
+        else:
+            st.info("Belum ada riwayat evaluasi manual. Jalankan evaluate_models.py.")
