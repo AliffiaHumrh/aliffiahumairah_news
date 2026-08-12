@@ -269,6 +269,14 @@ elif page == "monitoring":
         "dievaluasi ulang."
     )
 
+    if st.button("🔄 Jalankan monitoring confidence sekarang"):
+            with st.spinner("Menghitung statistik confidence..."):
+                import model_monitoring
+                model_monitoring.main()
+            st.cache_data.clear()
+            st.success("Selesai! Data ter-update.")
+            st.rerun()
+
     logs = load_model_logs()
     if not logs:
         st.info("Belum ada log. Jalankan model_monitoring.py atau evaluate_models.py dulu.")
