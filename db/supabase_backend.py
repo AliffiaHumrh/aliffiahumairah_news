@@ -1,8 +1,14 @@
 import logging
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import config
 
 logger = logging.getLogger("news_crawler.db.supabase")
+
+# Jumlah kandidat yang diambil dari DB sebelum diurutkan ulang berdasarkan
+# published_at asli di Python (urutan crawl tidak selalu = urutan publish).
+_FETCH_NEWS_CANDIDATE_POOL = 2000
 
 _client = None
 
@@ -87,7 +93,32 @@ def count_by_source() -> list[dict]:
     ]
 
 
-def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None) -> list[dict]:
+def _published_sort_key(row: dict):
+    """Urutkan berdasarkan waktu publish asli (bukan waktu crawl), karena
+    urutan crawl tidak selalu sama dengan urutan publish artikel di sumber."""
+    value = row.get("published_at")
+    if value:
+        try:
+            dt = parsedate_to_datetime(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (TypeError, ValueError):
+            pass
+    try:
+        dt = datetime.fromisoformat(row["created_at"])
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None,
+                date_from: str | None = None, date_to: str | None = None,
+                sentiment: str | None = None) -> list[dict]:
+    from datetime import datetime, timedelta
+
     client = _get_client()
     query = client.table("news").select(
         "id, title, content, processed_content, topic_id, topic_label, sentiment, sentiment_confidence, source, url, published_at, created_at"
@@ -96,8 +127,15 @@ def fetch_news(limit: int = 50, source: str | None = None, search: str | None = 
         query = query.eq("source", source)
     if search:
         query = query.ilike("title", f"%{search}%")
+    if sentiment:
+        query = query.eq("sentiment", sentiment)
+    if date_from:
+        query = query.gte("created_at", date_from)
+    if date_to:
+        date_to_exclusive = (datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        query = query.lt("created_at", date_to_exclusive)
 
-    resp = query.order("published_at", desc=True).limit(limit).execute()
+    resp = query.order("created_at", desc=True).limit(limit).execute()
     return resp.data
 
 

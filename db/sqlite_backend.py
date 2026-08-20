@@ -2,6 +2,7 @@ import logging
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
 import config
 
@@ -145,8 +146,32 @@ def count_by_source() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None) -> list[dict]:
-    """Dipakai oleh dashboard Streamlit untuk menampilkan berita terbaru."""
+def _published_sort_key(row: dict):
+    """Urutkan berdasarkan waktu publish asli (bukan waktu crawl), karena
+    urutan crawl tidak selalu sama dengan urutan publish artikel di sumber."""
+    value = row.get("published_at")
+    if value:
+        try:
+            dt = parsedate_to_datetime(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (TypeError, ValueError):
+            pass
+    try:
+        dt = datetime.fromisoformat(row["created_at"])
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (TypeError, ValueError):
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+
+def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None,
+                date_from: str | None = None, date_to: str | None = None,
+                sentiment: str | None = None) -> list[dict]:
+    from datetime import datetime, timedelta
+
     query = "SELECT id, title, content, processed_content, topic_id, topic_label, sentiment, sentiment_confidence, source, url, published_at, created_at FROM news"
     conditions, params = [], []
 
@@ -156,10 +181,21 @@ def fetch_news(limit: int = 50, source: str | None = None, search: str | None = 
     if search:
         conditions.append("title LIKE ?")
         params.append(f"%{search}%")
+    if sentiment:
+        conditions.append("sentiment = ?")
+        params.append(sentiment)
+    if date_from:
+        conditions.append("created_at >= ?")
+        params.append(date_from)
+    if date_to:
+        
+        date_to_exclusive = (datetime.strptime(date_to, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        conditions.append("created_at < ?")
+        params.append(date_to_exclusive)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
 
-    query += " ORDER BY published_at DESC LIMIT ?"
+    query += " ORDER BY created_at DESC LIMIT ?"
     params.append(limit)
 
     with get_connection() as conn:
