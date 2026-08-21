@@ -1,13 +1,5 @@
-feedparser>=6.0.11
-APScheduler>=3.10.4
-python-dotenv>=1.0.1
-supabase>=2.9.0
 streamlit>=1.38.0
 pandas>=2.2.0
-Sastrawi>=1.0.1
-bertopic>=0.16.0
-sentence-transformers>=3.0.0
-transformers==4.44.2
-torch>=2.0.0
-sentencepiece>=0.2.0
+supabase>=2.9.0
+python-dotenv>=1.0.1
 plotly>=6.0.0
