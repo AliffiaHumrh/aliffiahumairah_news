@@ -161,7 +161,7 @@ def status_badge(status: str) -> str:
 
 
 # SIDEBAR: navigasi (button-based) + kontrol
-st.sidebar.title("🌸 News Intelligence")
+st.sidebar.title("News Intelligence")
 st.sidebar.caption(f"Database: **{config.DB_BACKEND}**")
 
 if "page" not in st.session_state:
