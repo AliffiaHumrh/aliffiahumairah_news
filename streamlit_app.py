@@ -162,7 +162,7 @@ def status_badge(status: str) -> str:
 
 # SIDEBAR: navigasi (button-based) + kontrol
 st.sidebar.title("🌸 News Intelligence")
-st.sidebar.caption(f"Backend: **{config.DB_BACKEND}**")
+st.sidebar.caption(f"Database: **{config.DB_BACKEND}**")
 
 if "page" not in st.session_state:
     st.session_state.page = "overview"
@@ -350,8 +350,21 @@ elif page == "trending":
             )
 
             st.subheader("🏆 Top 15 berdasarkan Trend Score")
-            top15 = df.head(15).set_index("topic_label")
-            st.bar_chart(top15["trend_score"], color="#F472B6")
+            top15 = df.head(15).sort_values("trend_score", ascending=True)
+            fig_top15 = px.bar(
+                top15,
+                x="trend_score",
+                y="topic_label",
+                orientation="h",
+                color_discrete_sequence=["#F472B6"],
+            )
+            fig_top15.update_layout(
+                yaxis_title="",
+                xaxis_title="Trend Score",
+                margin=dict(t=10, b=10, l=10, r=10),
+                height=500,
+            )
+            st.plotly_chart(fig_top15, use_container_width=True)
 
 # HALAMAN: AI SUMMARY
 elif page == "summary":
