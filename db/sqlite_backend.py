@@ -169,7 +169,7 @@ def _published_sort_key(row: dict):
 
 def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None,
                 date_from: str | None = None, date_to: str | None = None,
-                sentiment: str | None = None) -> list[dict]:
+                sentiment: str | None = None, topic: str | None = None) -> list[dict]:
     from datetime import datetime, timedelta
 
     query = "SELECT id, title, content, processed_content, topic_id, topic_label, sentiment, sentiment_confidence, source, url, published_at, created_at FROM news"
@@ -184,6 +184,9 @@ def fetch_news(limit: int = 50, source: str | None = None, search: str | None = 
     if sentiment:
         conditions.append("sentiment = ?")
         params.append(sentiment)
+    if topic:
+        conditions.append("topic_label = ?")
+        params.append(topic)
     if date_from:
         conditions.append("created_at >= ?")
         params.append(date_from)
@@ -207,6 +210,16 @@ def list_sources() -> list[str]:
     with get_connection() as conn:
         rows = conn.execute("SELECT DISTINCT source FROM news ORDER BY source").fetchall()
     return [r["source"] for r in rows]
+
+
+def list_topics() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT topic_label FROM news "
+            "WHERE topic_label IS NOT NULL AND topic_label != '' "
+            "ORDER BY topic_label"
+        ).fetchall()
+    return [r["topic_label"] for r in rows]
 
 
 def get_unprocessed_news(limit: int = 200) -> list[dict]:

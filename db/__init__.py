@@ -23,6 +23,7 @@ count_news = _backend.count_news
 count_by_source = _backend.count_by_source
 fetch_news = _backend.fetch_news
 list_sources = _backend.list_sources
+list_topics = _backend.list_topics
 get_unprocessed_news = _backend.get_unprocessed_news
 update_processed_content = _backend.update_processed_content
 get_all_processed_news = _backend.get_all_processed_news

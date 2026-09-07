@@ -6,8 +6,6 @@ import config
 
 logger = logging.getLogger("news_crawler.db.supabase")
 
-# Jumlah kandidat yang diambil dari DB sebelum diurutkan ulang berdasarkan
-# published_at asli di Python (urutan crawl tidak selalu = urutan publish).
 _FETCH_NEWS_CANDIDATE_POOL = 2000
 
 _client = None
@@ -94,8 +92,6 @@ def count_by_source() -> list[dict]:
 
 
 def _published_sort_key(row: dict):
-    """Urutkan berdasarkan waktu publish asli (bukan waktu crawl), karena
-    urutan crawl tidak selalu sama dengan urutan publish artikel di sumber."""
     value = row.get("published_at")
     if value:
         try:
@@ -116,7 +112,7 @@ def _published_sort_key(row: dict):
 
 def fetch_news(limit: int = 50, source: str | None = None, search: str | None = None,
                 date_from: str | None = None, date_to: str | None = None,
-                sentiment: str | None = None) -> list[dict]:
+                sentiment: str | None = None, topic: str | None = None) -> list[dict]:
     from datetime import datetime, timedelta
 
     client = _get_client()
@@ -129,6 +125,8 @@ def fetch_news(limit: int = 50, source: str | None = None, search: str | None = 
         query = query.ilike("title", f"%{search}%")
     if sentiment:
         query = query.eq("sentiment", sentiment)
+    if topic:
+        query = query.eq("topic_label", topic)
     if date_from:
         query = query.gte("created_at", date_from)
     if date_to:
@@ -154,6 +152,19 @@ def list_sources() -> list[str]:
         offset += page_size
     return sorted(all_sources)
 
+def list_topics() -> list[str]:
+    client = _get_client()
+    all_topics: set[str] = set()
+    offset = 0
+    page_size = 1000
+    while True:
+        resp = client.table("news").select("topic_label").range(offset, offset + page_size - 1).execute()
+        batch = resp.data
+        all_topics.update(row["topic_label"] for row in batch if row.get("topic_label"))
+        if len(batch) < page_size:
+            break
+        offset += page_size
+    return sorted(all_topics)
 
 def get_unprocessed_news(limit: int = 200) -> list[dict]:
     
@@ -330,7 +341,6 @@ def get_latest_trends(limit: int = 20) -> list[dict]:
 
 
 def get_articles_for_topic(topic_id: int, limit: int = 10) -> list[dict]:
-    """Ambil beberapa artikel terbaru untuk satu topic_id (dipakai ai_summary.py, recommendation_engine.py)."""
     client = _get_client()
     resp = (
         client.table("news")
@@ -408,7 +418,6 @@ def update_recommendation_status(recommendation_id: int, status: str) -> None:
     client.table("recommendations").update({"status": status}).eq("id", recommendation_id).execute()
 
 def get_recent_sentiment_data(start_iso: str, end_iso: str) -> list[dict]:
-    """Ambil sentiment+confidence berita dalam rentang waktu (dipakai model_monitoring.py FR-12)."""
     client = _get_client()
     rows: list[dict] = []
     offset = 0
