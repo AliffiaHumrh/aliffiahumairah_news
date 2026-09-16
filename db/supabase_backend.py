@@ -67,7 +67,12 @@ def insert_news(title: str, content: str, source: str, url: str, published_at: s
 
 def count_news() -> int:
     client = _get_client()
-    resp = client.table("news").select("id", count="exact").limit(1).execute()
+    # "estimated" (bukan "exact") -- tabel `news` sudah puluhan ribu baris,
+    # count="exact" berarti full table scan dan kadang kena statement
+    # timeout Supabase (khususnya saat koneksi baru/dingin). "estimated"
+    # pakai statistik planner untuk tabel besar, jatuh ke exact count kalau
+    # tabelnya kecil -- cukup akurat untuk kebutuhan dashboard/logging.
+    resp = client.table("news").select("id", count="estimated").limit(1).execute()
     return resp.count or 0
 
 

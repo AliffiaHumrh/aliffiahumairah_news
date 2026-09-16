@@ -58,7 +58,17 @@ def main():
     db.init_db()
     sources = _select_sources()
     crawl_all_sources(sources)
-    logger.info("Total berita di database sekarang: %d", db.count_news())
+
+    # Ini cuma buat logging -- crawl & insert di atas sudah selesai dan
+    # berhasil pada titik ini. Jangan biarkan query count yang gagal
+    # (mis. Supabase statement timeout di tabel besar) bikin seluruh job
+    # GitHub Actions ditandai gagal, soalnya itu bikin step berikutnya
+    # (text preprocessing, sentiment analysis) ikut di-skip padahal
+    # berita barunya sudah tersimpan dengan benar.
+    try:
+        logger.info("Total berita di database sekarang: %d", db.count_news())
+    except Exception as exc:
+        logger.warning("Gagal mengambil total jumlah berita (non-fatal): %s", exc)
 
 
 if __name__ == "__main__":
