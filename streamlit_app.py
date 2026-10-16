@@ -728,17 +728,17 @@ elif page == "news":
             sources = load_sources()
             selected_source = st.selectbox("📡 Sumber", ["Semua sumber"] + sources)
         with col_b:
-            search_news = st.text_input("🔍 Cari di judul", placeholder="mis. ekonomi, pemilu, ...")
+            search_news = st.text_input("Cari di judul", placeholder="mis. ekonomi, pemilu, ...")
         with col_c:
-            limit_news = st.slider("🔢 Jumlah", min_value=10, max_value=2000, value=500, step=10)
+            limit_news = st.slider("Jumlah", min_value=10, max_value=2000, value=500, step=10)
 
         col_d, col_e, col_f = st.columns(3)
         with col_d:
-            date_range = st.date_input("📅 Rentang tanggal", value=(), format="YYYY-MM-DD")
+            date_range = st.date_input("Rentang tanggal", value=(), format="YYYY-MM-DD")
         with col_e:
-            sentiment_filter = st.selectbox("😊 Sentimen", ["Semua", "positive", "neutral", "negative"])
+            sentiment_filter = st.selectbox("Sentimen", ["Semua", "positive", "neutral", "negative"])
         with col_f:
-            search_topic = st.text_input("🏷️ Topik", placeholder="mis. 11_sekolah_persib_...")
+            search_topic = st.text_input("Topik", placeholder="mis. 11_sekolah_persib_...")
 
     date_from = date_range[0].isoformat() if len(date_range) >= 1 else None
     date_to = date_range[1].isoformat() if len(date_range) >= 2 else None
