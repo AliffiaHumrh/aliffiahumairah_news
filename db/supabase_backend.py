@@ -217,25 +217,25 @@ def get_recent_processed_news(since_iso: str, limit: int = 50000) -> list[dict]:
     client = _get_client()
     rows: list[dict] = []
     page_size = 1000
-    last_id = None
+    cursor = None  # created_at baris terakhir
     while len(rows) < limit:
         query = (
             client.table("news")
-            .select("id, title, processed_content")
+            .select("id, title, processed_content, created_at")
             .not_.is_("processed_content", "null")
             .neq("processed_content", "")
             .gte("created_at", since_iso)
-            .order("id", desc=True)
+            .order("created_at", desc=True)
             .limit(page_size)
         )
-        if last_id is not None:
-            query = query.lt("id", last_id)
+        if cursor is not None:
+            query = query.lt("created_at", cursor)
         resp = query.execute()
         batch = resp.data
         if not batch:
             break
         rows.extend(batch)
-        last_id = batch[-1]["id"]
+        cursor = batch[-1]["created_at"]
         if len(batch) < page_size:
             break
     return rows[:limit]
