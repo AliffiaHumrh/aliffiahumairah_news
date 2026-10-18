@@ -214,29 +214,31 @@ def get_all_processed_news(limit: int = 200000) -> list[dict]:
 
 
 def get_recent_processed_news(since_iso: str, limit: int = 50000) -> list[dict]:
-    
     client = _get_client()
     rows: list[dict] = []
     page_size = 1000
-    offset = 0
+    last_id = None
     while len(rows) < limit:
-        resp = (
+        query = (
             client.table("news")
             .select("id, title, processed_content")
             .not_.is_("processed_content", "null")
             .neq("processed_content", "")
             .gte("created_at", since_iso)
             .order("id", desc=True)
-            .range(offset, offset + page_size - 1)
-            .execute()
+            .limit(page_size)
         )
+        if last_id is not None:
+            query = query.lt("id", last_id)
+        resp = query.execute()
         batch = resp.data
+        if not batch:
+            break
         rows.extend(batch)
+        last_id = batch[-1]["id"]
         if len(batch) < page_size:
             break
-        offset += page_size
     return rows[:limit]
-
 
 def update_topic(news_id: int, topic_id: int, topic_label: str) -> None:
     client = _get_client()
